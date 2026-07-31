@@ -1,0 +1,294 @@
+// ============================================================================
+// Driver Loyalty, Wallet & Mini-ERP System — Database Schema
+// ============================================================================
+// Design principles:
+// 1. The ledger (Transaction) table is APPEND-ONLY. Balances are NEVER stored
+//    as a mutable column — they are always derived by SUM(amount).
+// 2. Money is stored as Decimal(14,2) to avoid floating point rounding errors.
+// 3. Every foreign key that represents "who/what triggered this" is nullable
+//    where appropriate (e.g. a STAMP transaction has no operatorId, a manual
+//    CASH_ADVANCE has no deviceId) so a single Transaction model can express
+//    every financial event type.
+// 4. Hikvision device registration is modeled as its own join table
+//    (DriverDeviceRegistration) because a driver may need to be enrolled on
+//    several gates/devices, and each enrollment can succeed/fail independently.
+// 5. RecognitionEvent stores the raw webhook payload for every inbound
+//    Hikvision event (even ignored/duplicate ones) — this is what powers the
+//    cooldown/anti-fraud check and gives us a full audit trail.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  OPERATOR
+}
+
+enum DriverStatus {
+  ACTIVE // can be recognized, receive stamps, request advances
+  BLOCKED // frozen — no new transactions allowed
+  PENDING // registered in system, not yet synced to any device
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+  ERROR
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+enum TransactionType {
+  STAMP // + amount, automatic, from a recognized face event
+  CASH_ADVANCE // - amount, manual, issued by an Operator
+  GOODS_EXCHANGE // - amount, manual, issued by an Operator (linked to a Product)
+  MANUAL_ADJUSTMENT // +/- amount, manual correction by SuperAdmin (requires reason)
+}
+
+enum RecognitionEventStatus {
+  PROCESSED // resulted in a new STAMP transaction
+  IGNORED_COOLDOWN // same driver recognized again within cooldown window
+  UNMATCHED // device sent an employeeNo we don't recognize as an active driver
+  ERROR // processing failed (bad payload, DB error, etc.)
+}
+
+// ----------------------------------------------------------------------------
+// AUTH & ACCESS
+// ----------------------------------------------------------------------------
+
+/// Internal staff accounts: SuperAdmins and Operators.
+model User {
+  id           String   @id @default(cuid())
+  fullName     String
+  phone        String   @unique
+  passwordHash String
+  role         UserRole @default(OPERATOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Transactions this user issued as an operator (advances, exchanges, adjustments)
+  issuedTransactions Transaction[]  @relation("TransactionOperator")
+  auditLogs          AuditLog[]
+  refreshTokens      RefreshToken[]
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Truck drivers — the primary "customer" of the loyalty system.
+model Driver {
+  id           String       @id @default(cuid())
+  fullName     String
+  phone        String       @unique
+  passwordHash String? // optional — drivers can also log in purely via OTP
+  carPlate     String? // e.g. "01 A 123 AA"
+  carBrand     String?
+  carModel     String?
+  photoUrl     String? // reference photo used for Hikvision face enrollment
+  status       DriverStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  transactions        Transaction[]
+  deviceRegistrations DriverDeviceRegistration[]
+  recognitionEvents   RecognitionEvent[]
+  otpCodes            OtpCode[]
+  refreshTokens       RefreshToken[]
+
+  @@index([status])
+  @@index([phone])
+  @@map("drivers")
+}
+
+/// Short-lived OTP codes for driver phone-number login.
+model OtpCode {
+  id         String    @id @default(cuid())
+  driverId   String
+  driver     Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  code       String // hashed in application layer before persisting
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([driverId, expiresAt])
+  @@map("otp_codes")
+}
+
+/// Refresh tokens for both staff (User) and Driver sessions.
+/// Exactly one of userId / driverId is set per row.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driverId  String?
+  driver    Driver?   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([driverId])
+  @@map("refresh_tokens")
+}
+
+// ----------------------------------------------------------------------------
+// HIKVISION DEVICES
+// ----------------------------------------------------------------------------
+
+/// A physical Hikvision face-recognition gate/terminal.
+model Device {
+  id          String       @id @default(cuid())
+  name        String // e.g. "Main Gate", "Warehouse Entrance"
+  ipAddress   String
+  port        Int          @default(80)
+  username    String // ISAPI auth username
+  passwordEnc String // ISAPI auth password, encrypted at rest (app-layer AES)
+  location    String?
+  status      DeviceStatus @default(OFFLINE)
+  lastPingAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  registrations     DriverDeviceRegistration[]
+  recognitionEvents RecognitionEvent[]
+  transactions      Transaction[]
+
+  @@unique([ipAddress, port])
+  @@map("devices")
+}
+
+/// Enrollment status of a Driver's face on a specific Device.
+/// A driver can be (and often needs to be) enrolled on multiple gates.
+model DriverDeviceRegistration {
+  id              String     @id @default(cuid())
+  driverId        String
+  driver          Driver     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  deviceId        String
+  device          Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  hikvisionFaceId String? // employeeNo/FaceID/FDID returned by the ISAPI call
+  syncStatus      SyncStatus @default(PENDING)
+  syncError       String?
+  syncedAt        DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([driverId, deviceId])
+  @@map("driver_device_registrations")
+}
+
+/// Raw log of EVERY inbound Hikvision recognition webhook, matched or not,
+/// processed or ignored. This is the source of truth for the cooldown check
+/// ("has this driver already been stamped in the last hour?") and doubles as
+/// a full audit/debug trail for hardware issues.
+model RecognitionEvent {
+  id            String                 @id @default(cuid())
+  deviceId      String
+  device        Device                 @relation(fields: [deviceId], references: [id])
+  driverId      String?
+  driver        Driver?                @relation(fields: [driverId], references: [id])
+  employeeNoRaw String? // raw employeeNo/personId from the device payload
+  status        RecognitionEventStatus
+  rawPayload    Json // full webhook body, for debugging / replay
+  transactionId String?                @unique
+  transaction   Transaction?           @relation(fields: [transactionId], references: [id])
+  createdAt     DateTime               @default(now())
+
+  @@index([driverId, createdAt])
+  @@index([deviceId, createdAt])
+  @@map("recognition_events")
+}
+
+// ----------------------------------------------------------------------------
+// MINI-ERP: GOODS CATALOG
+// ----------------------------------------------------------------------------
+
+/// Catalog of goods drivers can exchange points for (tires, electronics, etc).
+model Product {
+  id        String   @id @default(cuid())
+  name      String // e.g. "Tire R15", "Power Bank 20000mAh"
+  category  String? // e.g. "TIRE", "ELECTRONICS", "OTHER"
+  unitPrice Decimal  @db.Decimal(14, 2) // point value of one unit, in UZS
+  stockQty  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+
+  @@map("products")
+}
+
+// ----------------------------------------------------------------------------
+// THE LEDGER — single source of truth for every driver's balance
+// ----------------------------------------------------------------------------
+
+/// Immutable, append-only ledger. NEVER UPDATE OR DELETE ROWS HERE.
+/// A driver's current balance = SUM(amount) WHERE driverId = X.
+/// A driver's total accumulated points = SUM(amount) WHERE driverId = X AND
+/// type = 'STAMP' (i.e. lifetime earnings, ignoring spend).
+model Transaction {
+  id       String          @id @default(cuid())
+  driverId String
+  driver   Driver          @relation(fields: [driverId], references: [id])
+  type     TransactionType
+
+  // Positive for STAMP / positive MANUAL_ADJUSTMENT.
+  // Negative for CASH_ADVANCE / GOODS_EXCHANGE / negative MANUAL_ADJUSTMENT.
+  amount Decimal @db.Decimal(14, 2)
+
+  description String?
+
+  // Who/what caused this transaction (mutually context-dependent, all nullable):
+  operatorId String? // set for CASH_ADVANCE, GOODS_EXCHANGE, MANUAL_ADJUSTMENT
+  operator   User?    @relation("TransactionOperator", fields: [operatorId], references: [id])
+  deviceId   String? // set for STAMP (which gate triggered it)
+  device     Device?  @relation(fields: [deviceId], references: [id])
+  productId  String? // set for GOODS_EXCHANGE
+  product    Product? @relation(fields: [productId], references: [id])
+
+  metadata  Json? // free-form extra data (e.g. { "tireSize": "R15", "qty": 4 })
+  createdAt DateTime @default(now())
+
+  recognitionEvent RecognitionEvent?
+
+  @@index([driverId, createdAt])
+  @@index([type, createdAt])
+  @@map("transactions")
+}
+
+// ----------------------------------------------------------------------------
+// AUDIT LOG — tracks every meaningful staff action (SuperAdmin requirement)
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String // e.g. "DRIVER_CREATED", "CASH_ADVANCE_ISSUED", "DEVICE_UPDATED"
+  entityType String // e.g. "Driver", "Transaction", "Device"
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
