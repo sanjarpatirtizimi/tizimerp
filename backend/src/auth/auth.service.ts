@@ -147,6 +147,41 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------
+  // Self-service password change (staff)
+  // ---------------------------------------------------------------------
+
+  async changeStaffPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await this.hashPassword(newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    // Invalidate every existing refresh token so other sessions must re-login.
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Refresh / logout — shared for staff + driver
   // ---------------------------------------------------------------------
 

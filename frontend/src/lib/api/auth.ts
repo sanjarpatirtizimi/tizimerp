@@ -17,4 +17,7 @@ export const authApi = {
       .then((r) => r.data),
 
   logout: (refreshToken: string) => apiClient.post("/auth/logout", { refreshToken }),
+
+  changeMyPassword: (currentPassword: string, newPassword: string) =>
+    apiClient.patch("/auth/me/password", { currentPassword, newPassword }),
 };

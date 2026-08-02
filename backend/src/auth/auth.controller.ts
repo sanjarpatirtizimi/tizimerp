@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService, TokenPair } from './auth.service';
 import { StaffLoginDto } from './dto/staff-login.dto';
 import {
@@ -7,6 +15,10 @@ import {
   VerifyOtpDto,
 } from './dto/driver-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { StaffJwtPayload } from '../common/decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -46,5 +58,20 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Body() dto: RefreshTokenDto): Promise<void> {
     await this.authService.logout(dto.refreshToken);
+  }
+
+  /** Self-service: any authenticated staff member (Operator or SuperAdmin) changes their own password. */
+  @Patch('me/password')
+  @UseGuards(JwtStaffGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changeMyPassword(
+    @CurrentUser() user: StaffJwtPayload,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.authService.changeStaffPassword(
+      user.sub,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 }

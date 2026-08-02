@@ -8,6 +8,7 @@ import {
   Server,
   Package,
   UserCog,
+  KeyRound,
   LogOut,
   Menu,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import {
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
+import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +56,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background px-4">
         <Link href="/staff/dashboard" className="font-semibold tracking-tight">
-          Sodiqlik tizimi
+          Sanjar Patir
         </Link>
         <div className="flex items-center gap-1">
           <span className="hidden text-xs text-muted-foreground sm:inline">
@@ -86,9 +88,22 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                   </SheetClose>
                 ))}
                 <SheetClose asChild>
+                  <ChangePasswordDialog
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        className="mt-4 justify-start gap-3 px-3"
+                      >
+                        <KeyRound className="size-4" />
+                        Parolni o&apos;zgartirish
+                      </Button>
+                    }
+                  />
+                </SheetClose>
+                <SheetClose asChild>
                   <Button
                     variant="ghost"
-                    className="mt-4 justify-start gap-3 px-3 text-destructive hover:text-destructive"
+                    className="justify-start gap-3 px-3 text-destructive hover:text-destructive"
                     onClick={handleLogout}
                   >
                     <LogOut className="size-4" />

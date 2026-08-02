@@ -19,7 +19,7 @@ export function DriverShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background px-4">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <Truck className="size-5" />
-          Mening hamyonim
+          Sanjar Patir
         </div>
         <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Chiqish">
           <LogOut className="size-4" />

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Haydovchilar Sodiqlik va Hamyon Tizimi",
-  description: "Haydovchilar uchun sodiqlik, hamyon va mini-ERP tizimi",
+  title: "Sanjar Patir | Haydovchilar Sodiqlik va Hamyon Tizimi",
+  description: "Sanjar Patir haydovchilari uchun sodiqlik, hamyon va mini-ERP tizimi",
 };
 
 export const viewport: Viewport = {

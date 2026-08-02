@@ -54,6 +54,9 @@ export default function LoginPage() {
           <div className="mb-2 flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Lock className="size-5" />
           </div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Sanjar Patir
+          </p>
           <CardTitle>Tizimga kirish</CardTitle>
           <CardDescription>Haydovchilar sodiqlik va hamyon tizimi</CardDescription>
         </CardHeader>
