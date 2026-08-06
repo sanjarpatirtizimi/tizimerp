@@ -22,17 +22,44 @@ import { RecognitionService } from './recognition.service';
  *   URL:  http://<your-server>/api/webhooks/hikvision/<deviceId>/recognition?secret=<HIKVISION_WEBHOOK_SECRET>
  *   Post Type: JSON
  *
- * Depending on firmware/settings, the device posts one of two shapes —
- * we accept both:
+ * Depending on firmware/settings, the device posts one of several shapes —
+ * we accept all of them:
  *   1. `multipart/form-data` with a text part named `event_log` — a JSON
  *      string containing `dateTime`, `eventType`, and (for face/card
  *      matches) a nested `AccessControllerEvent` object with
- *      `employeeNoString` — plus zero or more binary image parts (the
- *      matched face snapshot) under a device-specific field name.
- *   2. A plain `application/json` body that IS the event object itself
- *      (no `event_log` wrapper, no image attachment) — used when the
- *      device's "Post Type" is set to JSON without picture upload.
+ *      `employeeNoString`.
+ *   2. `multipart/form-data` with that SAME JSON string under a
+ *      differently-named text part — e.g. some DS-K1T671 firmware names
+ *      the field `AccessControllerEvent` instead of `event_log`. We don't
+ *      rely on the field name at all: we scan every text field for one
+ *      that looks like a JSON object.
+ *   3. A plain `application/json` body that IS the event object itself
+ *      (no wrapper) — used when the device's "Post Type" is JSON without
+ *      picture upload.
+ * All shapes may additionally include zero or more binary image parts
+ * (the matched face snapshot) under a device-specific field name.
  */
+/**
+ * Finds whichever field actually holds the event JSON, regardless of what
+ * the device named it. Prefers the conventional `event_log` field; falls
+ * back to the first string field that looks like a JSON object (handles
+ * firmware that names the field e.g. `AccessControllerEvent`); finally
+ * falls back to the whole body (plain-JSON, no-wrapper case).
+ */
+function extractEventLogCandidate(
+  body: Record<string, unknown> | undefined,
+): unknown {
+  if (typeof body?.event_log === 'string') return body.event_log;
+
+  for (const value of Object.values(body ?? {})) {
+    if (typeof value === 'string' && value.trim().startsWith('{')) {
+      return value;
+    }
+  }
+
+  return body;
+}
+
 @Controller('webhooks/hikvision')
 export class HikvisionWebhookController {
   private readonly logger = new Logger(HikvisionWebhookController.name);
@@ -57,9 +84,7 @@ export class HikvisionWebhookController {
       `[${deviceId}] webhook hit — bodyKeys=[${Object.keys(body ?? {}).join(', ')}] files=${files?.length ?? 0}`,
     );
 
-    // Shape 1: multipart with an `event_log` text field. Shape 2: the raw
-    // JSON body IS the event log, top-level.
-    const rawEventLog = body?.event_log ?? body;
+    const rawEventLog = extractEventLogCandidate(body);
 
     // Some firmware sends the snapshot as a plain image field, others as a
     // named field like "Picture1.jpg" — we don't rely on the field name,
