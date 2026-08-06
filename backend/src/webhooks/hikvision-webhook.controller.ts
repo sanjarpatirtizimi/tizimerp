@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   HttpCode,
@@ -7,22 +8,29 @@ import {
   Param,
   Post,
   Query,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { RecognitionService } from './recognition.service';
+import { HikvisionWebhookBodyDto } from './dto/hikvision-event.dto';
 
 /**
  * Inbound endpoint the Hikvision device itself calls (as an HTTP client) the
  * moment it recognizes a face. Configure this URL as the device's
- * "HTTP Listening Host" notification address:
+ * "HTTP Listening Host" notification address (Configuration → Network →
+ * Advanced Settings → Network → HTTP Listening Host on a DS-K1T671):
  *
- *   http://<your-server>/api/webhooks/hikvision/<deviceId>/recognition?secret=<HIKVISION_WEBHOOK_SECRET>
+ *   URL:  http://<your-server>/api/webhooks/hikvision/<deviceId>/recognition?secret=<HIKVISION_WEBHOOK_SECRET>
+ *   Post Type: JSON
  *
- * The device posts `multipart/form-data` with a JSON `event_log` text part
- * (and usually a JPEG snapshot part, which we currently ignore beyond
- * receiving it — persist it under uploads/ if you need a photographic audit
- * trail of every stamp).
+ * The device posts `multipart/form-data` with:
+ *   - a text part named `event_log` — a JSON string containing `dateTime`,
+ *     `eventType`, and (for face/card matches) a nested
+ *     `AccessControllerEvent` object with `employeeNoString`.
+ *   - zero or more binary image parts (the matched face snapshot) under a
+ *     device-specific field name — we accept ANY field name via
+ *     `AnyFilesInterceptor` and just take whatever image comes through.
  */
 @Controller('webhooks/hikvision')
 export class HikvisionWebhookController {
@@ -35,14 +43,25 @@ export class HikvisionWebhookController {
   @UseInterceptors(AnyFilesInterceptor())
   async handleRecognition(
     @Param('deviceId') deviceId: string,
-    @Body() body: Record<string, unknown>,
+    @Body() body: HikvisionWebhookBodyDto,
     @Query('secret') secret: string | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
   ) {
     this.recognitionService.verifyWebhookSecret(secret);
+
+    if (!body?.event_log) {
+      throw new BadRequestException('Missing event_log field in webhook body');
+    }
+
+    // Some firmware sends the snapshot as a plain image field, others as a
+    // named field like "Picture1.jpg" — we don't rely on the field name,
+    // just take the first image-looking attachment, if any.
+    const photo = files?.find((f) => f.mimetype?.startsWith('image/'));
 
     const result = await this.recognitionService.handleRecognitionEvent(
       deviceId,
       body.event_log,
+      photo?.buffer,
     );
 
     this.logger.log(`[${deviceId}] ${result.status}: ${result.message}`);

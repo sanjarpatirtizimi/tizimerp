@@ -12,9 +12,13 @@ import {
   TransactionType,
 } from '@prisma/client';
 import { timingSafeEqual } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppConfig } from '../config/configuration';
 import { parseEventLog } from './recognition-event.parser';
+
+const UPLOAD_DIR = join(process.cwd(), 'uploads', 'recognitions');
 
 export interface RecognitionOutcome {
   status: RecognitionEventStatus;
@@ -54,6 +58,7 @@ export class RecognitionService {
   async handleRecognitionEvent(
     deviceId: string,
     rawEventLog: unknown,
+    photo?: Buffer,
   ): Promise<RecognitionOutcome> {
     const device = await this.prisma.device.findUnique({
       where: { id: deviceId },
@@ -62,7 +67,21 @@ export class RecognitionService {
       throw new NotFoundException(`Unknown device: ${deviceId}`);
     }
 
-    const parsed = parseEventLog(rawEventLog);
+    const parsed = await parseEventLog(rawEventLog);
+
+    if (parsed.validationErrors.length > 0) {
+      // Non-fatal: firmware payloads vary a lot between models. Log for
+      // visibility but keep processing with whatever we could extract.
+      this.logger.warn(
+        `[${deviceId}] event_log validation warnings: ${parsed.validationErrors
+          .map((e) => Object.values(e.constraints ?? {}).join(', '))
+          .join('; ')}`,
+      );
+    }
+
+    const capturedPhotoUrl = photo
+      ? await this.savePhoto(deviceId, photo)
+      : undefined;
 
     if (!parsed.employeeNo) {
       // Not a face-match event (could be a heartbeat, tamper alarm, etc).
@@ -73,6 +92,8 @@ export class RecognitionService {
           status: RecognitionEventStatus.UNMATCHED,
           rawPayload: parsed.raw as Prisma.InputJsonValue,
           employeeNoRaw: null,
+          eventDateTime: parsed.eventDateTime,
+          capturedPhotoUrl,
         },
       });
       return {
@@ -93,6 +114,8 @@ export class RecognitionService {
           status: RecognitionEventStatus.UNMATCHED,
           rawPayload: parsed.raw as Prisma.InputJsonValue,
           employeeNoRaw: parsed.employeeNo,
+          eventDateTime: parsed.eventDateTime,
+          capturedPhotoUrl,
         },
       });
       return {
@@ -132,6 +155,8 @@ export class RecognitionService {
               status: RecognitionEventStatus.IGNORED_COOLDOWN,
               rawPayload: parsed.raw as Prisma.InputJsonValue,
               employeeNoRaw: parsed.employeeNo,
+              eventDateTime: parsed.eventDateTime,
+              capturedPhotoUrl,
             },
           });
           return {
@@ -157,6 +182,8 @@ export class RecognitionService {
             status: RecognitionEventStatus.PROCESSED,
             rawPayload: parsed.raw as Prisma.InputJsonValue,
             employeeNoRaw: parsed.employeeNo,
+            eventDateTime: parsed.eventDateTime,
+            capturedPhotoUrl,
             transactionId: transaction.id,
           },
         });
@@ -178,9 +205,19 @@ export class RecognitionService {
           status: RecognitionEventStatus.ERROR,
           rawPayload: parsed.raw as Prisma.InputJsonValue,
           employeeNoRaw: parsed.employeeNo,
+          eventDateTime: parsed.eventDateTime,
+          capturedPhotoUrl,
         },
       });
       throw error;
     }
+  }
+
+  /** Persists the face snapshot the device attached to the event, for audit purposes. */
+  private async savePhoto(deviceId: string, buffer: Buffer): Promise<string> {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const fileName = `${deviceId}-${Date.now()}.jpg`;
+    await writeFile(join(UPLOAD_DIR, fileName), buffer);
+    return `/uploads/recognitions/${fileName}`;
   }
 }
