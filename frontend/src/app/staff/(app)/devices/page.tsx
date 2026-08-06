@@ -2,22 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, RefreshCw, Server } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
 import { RequireStaff } from "@/components/auth/route-guard";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DeviceFormDialog } from "@/components/devices/device-form-dialog";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { devicesApi } from "@/lib/api/devices";
 import type { Device, DeviceStatus } from "@/lib/types";
@@ -43,15 +45,7 @@ function DevicesPageContent() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [pingingId, setPingingId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-
-  const [name, setName] = useState("");
-  const [ipAddress, setIpAddress] = useState("");
-  const [port, setPort] = useState("80");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [location, setLocation] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function loadDevices() {
     devicesApi
@@ -74,31 +68,16 @@ function DevicesPageContent() {
     }
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setIsSubmitting(true);
+  async function handleDelete(id: string) {
+    setDeletingId(id);
     try {
-      await devicesApi.create({
-        name,
-        ipAddress,
-        port: Number(port) || 80,
-        username,
-        password,
-        location: location || undefined,
-      });
-      toast.success("Qurilma qo'shildi");
-      setOpen(false);
-      setName("");
-      setIpAddress("");
-      setPort("80");
-      setUsername("");
-      setPassword("");
-      setLocation("");
-      loadDevices();
+      await devicesApi.remove(id);
+      toast.success("Qurilma o'chirildi");
+      setDevices((prev) => prev.filter((d) => d.id !== id));
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Qurilma qo'shib bo'lmadi"));
+      toast.error(getApiErrorMessage(error, "Qurilmani o'chirib bo'lmadi"));
     } finally {
-      setIsSubmitting(false);
+      setDeletingId(null);
     }
   }
 
@@ -106,79 +85,15 @@ function DevicesPageContent() {
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Qurilmalar</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
+        <DeviceFormDialog
+          onSuccess={loadDevices}
+          trigger={
             <Button size="sm">
               <Plus />
               Qurilma qo&apos;shish
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <form onSubmit={handleCreate}>
-              <DialogHeader>
-                <DialogTitle>Hikvision qurilmasini qo&apos;shish</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dev-name">Nomi</Label>
-                  <Input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} required />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="dev-ip">IP manzil</Label>
-                    <Input
-                      id="dev-ip"
-                      placeholder="192.168.1.10"
-                      value={ipAddress}
-                      onChange={(e) => setIpAddress(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dev-port">Port</Label>
-                    <Input id="dev-port" value={port} onChange={(e) => setPort(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="dev-user">Foydalanuvchi nomi</Label>
-                    <Input
-                      id="dev-user"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dev-pass">Parol</Label>
-                    <Input
-                      id="dev-pass"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dev-location">Joylashuv (ixtiyoriy)</Label>
-                  <Input
-                    id="dev-location"
-                    placeholder="Asosiy darvoza"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="animate-spin" />}
-                  Qurilma qo&apos;shish
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+          }
+        />
       </div>
 
       {isLoading ? (
@@ -218,6 +133,7 @@ function DevicesPageContent() {
                     size="icon-sm"
                     onClick={() => handlePing(device.id)}
                     disabled={pingingId === device.id}
+                    aria-label="Ulanishni tekshirish"
                   >
                     {pingingId === device.id ? (
                       <Loader2 className="animate-spin" />
@@ -225,6 +141,51 @@ function DevicesPageContent() {
                       <RefreshCw />
                     )}
                   </Button>
+                  <DeviceFormDialog
+                    device={device}
+                    onSuccess={loadDevices}
+                    trigger={
+                      <Button variant="ghost" size="icon-sm" aria-label="Tahrirlash">
+                        <Pencil />
+                      </Button>
+                    }
+                  />
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={deletingId === device.id}
+                        aria-label="O'chirish"
+                      >
+                        {deletingId === device.id ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Trash2 />
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Qurilmani o&apos;chirish?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          &quot;{device.name}&quot; qurilmasi butunlay o&apos;chiriladi. Agar bu
+                          qurilmada tanish tarixi (recognition events) yoki tranzaksiyalar
+                          mavjud bo&apos;lsa, o&apos;chirish rad etiladi.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => handleDelete(device.id)}
+                        >
+                          O&apos;chirish
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </CardContent>
               </Card>
             </li>

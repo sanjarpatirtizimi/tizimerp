@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
+import { UpdateDeviceDto } from './dto/update-device.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -25,6 +37,19 @@ export class DevicesController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.devicesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.SUPER_ADMIN)
+  update(@Param('id') id: string, @Body() dto: UpdateDeviceDto) {
+    return this.devicesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string) {
+    return this.devicesService.remove(id);
   }
 
   @Post(':id/ping')
