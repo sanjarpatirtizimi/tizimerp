@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HikvisionService } from '../hikvision/hikvision.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'drivers');
 
@@ -151,6 +152,80 @@ export class DriversService {
       entityType: 'Driver',
       entityId: driverId,
       metadata: { deviceIds },
+    });
+
+    return this.findOne(driverId);
+  }
+
+  /**
+   * Records/overwrites the Person ID a device uses to identify this driver,
+   * WITHOUT calling the device's ISAPI (no network call to the device at
+   * all). Use this when the driver's face was enrolled directly on the
+   * device's own local UI — the device assigned its own employeeNo that
+   * has nothing to do with our driver.id, so recognition webhooks would
+   * otherwise never match.
+   */
+  async setManualFaceMapping(
+    driverId: string,
+    dto: ManualFaceMappingDto,
+    operatorId: string,
+  ) {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    const device = await this.prisma.device.findUnique({
+      where: { id: dto.deviceId },
+    });
+    if (!device) throw new NotFoundException('Device not found');
+
+    const conflict = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        deviceId: dto.deviceId,
+        hikvisionFaceId: dto.hikvisionFaceId,
+        NOT: { driverId },
+      },
+    });
+    if (conflict) {
+      throw new ConflictException(
+        'This Person ID is already mapped to a different driver on this device',
+      );
+    }
+
+    await this.prisma.driverDeviceRegistration.upsert({
+      where: { driverId_deviceId: { driverId, deviceId: dto.deviceId } },
+      create: {
+        driverId,
+        deviceId: dto.deviceId,
+        hikvisionFaceId: dto.hikvisionFaceId,
+        syncStatus: SyncStatus.SYNCED,
+        syncedAt: new Date(),
+      },
+      update: {
+        hikvisionFaceId: dto.hikvisionFaceId,
+        syncStatus: SyncStatus.SYNCED,
+        syncedAt: new Date(),
+        syncError: null,
+      },
+    });
+
+    if (driver.status === DriverStatus.PENDING) {
+      await this.prisma.driver.update({
+        where: { id: driverId },
+        data: { status: DriverStatus.ACTIVE },
+      });
+    }
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_MANUAL_FACE_MAPPING_SET',
+      entityType: 'Driver',
+      entityId: driverId,
+      metadata: {
+        deviceId: dto.deviceId,
+        hikvisionFaceId: dto.hikvisionFaceId,
+      },
     });
 
     return this.findOne(driverId);

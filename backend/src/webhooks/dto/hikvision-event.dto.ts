@@ -83,15 +83,3 @@ export class HikvisionEventLogDto {
   @Type(() => AccessControllerEventDto)
   AccessControllerEvent?: AccessControllerEventDto;
 }
-
-/**
- * The outer multipart body NestJS binds via `@Body()`. `event_log` arrives
- * as a JSON-encoded *string* (a text form field, not a nested object) — it
- * gets parsed + validated into `HikvisionEventLogDto` separately in the
- * controller, since Nest's ValidationPipe cannot auto-parse embedded JSON
- * strings from multipart bodies.
- */
-export class HikvisionWebhookBodyDto {
-  @IsString()
-  event_log: string;
-}

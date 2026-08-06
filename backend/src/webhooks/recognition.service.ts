@@ -102,9 +102,10 @@ export class RecognitionService {
       };
     }
 
-    const driver = await this.prisma.driver.findUnique({
-      where: { id: parsed.employeeNo },
-    });
+    const driver = await this.resolveDriverByEmployeeNo(
+      deviceId,
+      parsed.employeeNo,
+    );
 
     if (!driver || driver.status !== DriverStatus.ACTIVE) {
       await this.prisma.recognitionEvent.create({
@@ -211,6 +212,28 @@ export class RecognitionService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Drivers enrolled through our platform have their device Person ID set
+   * equal to `driver.id` (see `HikvisionService.upsertPerson`). Drivers
+   * enrolled directly on the device's own local UI instead get an
+   * arbitrary Person ID assigned by the device — for those, staff record
+   * the real mapping via `DriversService.setManualFaceMapping`, stored in
+   * `DriverDeviceRegistration.hikvisionFaceId`. Check that mapping first,
+   * then fall back to treating employeeNo as our driver.id directly.
+   */
+  private async resolveDriverByEmployeeNo(
+    deviceId: string,
+    employeeNo: string,
+  ) {
+    const registration = await this.prisma.driverDeviceRegistration.findFirst({
+      where: { deviceId, hikvisionFaceId: employeeNo },
+      include: { driver: true },
+    });
+    if (registration) return registration.driver;
+
+    return this.prisma.driver.findUnique({ where: { id: employeeNo } });
   }
 
   /** Persists the face snapshot the device attached to the event, for audit purposes. */

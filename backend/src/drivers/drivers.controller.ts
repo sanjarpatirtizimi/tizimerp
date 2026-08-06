@@ -15,6 +15,7 @@ import { DriverStatus, UserRole } from '@prisma/client';
 import { DriversService } from './drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
+import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -48,6 +49,16 @@ export class DriversController {
   ) {
     const ids = JSON.parse(deviceIds) as string[];
     return this.driversService.enrollOnDevices(id, ids, photo.buffer, user.sub);
+  }
+
+  @Post(':id/manual-face-mapping')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  setManualFaceMapping(
+    @Param('id') id: string,
+    @Body() dto: ManualFaceMappingDto,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.setManualFaceMapping(id, dto, user.sub);
   }
 
   @Get()

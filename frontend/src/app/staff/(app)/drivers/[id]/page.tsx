@@ -12,6 +12,7 @@ import { TransactionList } from "@/components/wallet/transaction-list";
 import { CashAdvanceDialog } from "@/components/drivers/cash-advance-dialog";
 import { GoodsExchangeDialog } from "@/components/drivers/goods-exchange-dialog";
 import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-dialog";
+import { ManualFaceMappingDialog } from "@/components/drivers/manual-face-mapping-dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
 import { driversApi } from "@/lib/api/drivers";
@@ -107,6 +108,10 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
         <CashAdvanceDialog driverId={id} onSuccess={refresh} />
         <GoodsExchangeDialog driverId={id} onSuccess={refresh} />
       </div>
+
+      {driver && (
+        <ManualFaceMappingDialog driverId={id} onSuccess={loadDriver} />
+      )}
 
       {isSuperAdmin && driver && (
         <div className="flex items-center justify-between">

@@ -53,4 +53,9 @@ export const driversApi = {
 
   setStatus: (id: string, status: DriverStatus) =>
     apiClient.patch<Driver>(`/drivers/${id}/status`, { status }).then((r) => r.data),
+
+  setManualFaceMapping: (id: string, deviceId: string, hikvisionFaceId: string) =>
+    apiClient
+      .post<Driver>(`/drivers/${id}/manual-face-mapping`, { deviceId, hikvisionFaceId })
+      .then((r) => r.data),
 };
