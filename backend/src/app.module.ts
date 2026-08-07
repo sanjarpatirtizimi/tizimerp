@@ -13,6 +13,7 @@ import { ProductsModule } from './products/products.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { HikvisionModule } from './hikvision/hikvision.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { AgentModule } from './agent/agent.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     LedgerModule,
     HikvisionModule,
     WebhooksModule,
+    AgentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

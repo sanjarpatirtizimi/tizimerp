@@ -111,6 +111,25 @@ export class DriversService {
         update: { syncStatus: SyncStatus.PENDING, syncError: null },
       });
 
+      if (device.agentKeyHash) {
+        // A local relay agent is configured for this device — it'll poll
+        // `AgentController.listPending` and push the face itself over the
+        // local network within a few seconds. Nothing more to do here.
+        continue;
+      }
+
+      if (!device.ipAddress || !device.username || !device.passwordEnc) {
+        await this.prisma.driverDeviceRegistration.update({
+          where: { id: registration.id },
+          data: {
+            syncStatus: SyncStatus.FAILED,
+            syncError:
+              "Bu qurilmada na ISAPI ma'lumotlari, na relay agent sozlangan — avtomatik yuklab bo'lmadi",
+          },
+        });
+        continue;
+      }
+
       try {
         const result = await this.hikvisionService.enrollDriver(
           device,

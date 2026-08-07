@@ -161,15 +161,23 @@ model RefreshToken {
 model Device {
   id          String       @id @default(cuid())
   name        String // e.g. "Main Gate", "Warehouse Entrance"
-  ipAddress   String? // only set for devices we control via ISAPI
+  ipAddress   String? // only set for devices we control via ISAPI directly
   port        Int          @default(80)
   username    String? // ISAPI auth username, if any
   passwordEnc String? // ISAPI auth password, encrypted at rest, if any
   location    String?
   status      DeviceStatus @default(OFFLINE)
   lastPingAt  DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  /// bcrypt hash of the API key issued to a local "relay agent" — a small
+  /// program running on a device on the SAME local network as this
+  /// terminal (e.g. a tablet at the gate), which polls our backend for
+  /// newly-added drivers and pushes their photo to the terminal itself via
+  /// local ISAPI. Lets us auto-enroll faces without this app needing any
+  /// direct network path to the terminal (no port-forwarding needed).
+  agentKeyHash      String?
+  agentKeyCreatedAt DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   registrations     DriverDeviceRegistration[]
   recognitionEvents RecognitionEvent[]

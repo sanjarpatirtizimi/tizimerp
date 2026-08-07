@@ -33,10 +33,11 @@ export function DriverForm() {
   useEffect(() => {
     devicesApi
       .list()
-      // Only devices with real ISAPI credentials support push enrollment
-      // here; zero-config (webhook-only) devices are linked afterwards via
-      // "Ulash rejimi" on the driver's own page.
-      .then((all) => setDevices(all.filter((d) => d.ipAddress)))
+      // Only devices that can actually receive an automatic push — either
+      // directly (real ISAPI credentials) or via a local relay agent —
+      // support enrollment here. Plain webhook-only devices are linked
+      // afterwards via "Ulash rejimi" on the driver's own page.
+      .then((all) => setDevices(all.filter((d) => d.ipAddress || d.hasAgent)))
       .catch(() => undefined);
   }, []);
 
@@ -177,13 +178,13 @@ export function DriverForm() {
       {devices.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Qurilmalarga ulash (ilg&apos;or, ixtiyoriy)</CardTitle>
+            <CardTitle className="text-base">Qurilmalarga avtomatik yuklash (ixtiyoriy)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Bu faqat ISAPI orqali sozlangan qurilmalar uchun — rasm shu zahoti qurilmaga
-              yuklanadi. Oddiy holatda buni tashlab, keyinroq haydovchi sahifasidan
-              &quot;Ulash rejimi&quot; orqali qurilmaga ulang.
+              Tanlangan qurilma(lar)ga rasm avtomatik yuklanadi — to&apos;g&apos;ridan-to&apos;g&apos;ri
+              yoki qurilmadagi relay agent orqali. Boshqa qurilmalarga ulash uchun
+              haydovchi sahifasidan &quot;Ulash rejimi&quot;dan foydalaning.
             </p>
             {devices.map((device) => (
               <label
@@ -196,7 +197,9 @@ export function DriverForm() {
                 />
                 <span className="flex-1">
                   {device.name}
-                  <span className="block text-xs text-muted-foreground">{device.ipAddress}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {device.ipAddress ?? "Relay agent orqali"}
+                  </span>
                 </span>
               </label>
             ))}

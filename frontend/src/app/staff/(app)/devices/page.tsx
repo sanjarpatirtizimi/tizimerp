@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DeviceFormDialog } from "@/components/devices/device-form-dialog";
+import { AgentKeyDialog } from "@/components/devices/agent-key-dialog";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { devicesApi } from "@/lib/api/devices";
 import type { Device, DeviceStatus } from "@/lib/types";
@@ -114,7 +115,14 @@ function DevicesPageContent() {
                     <Server className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{device.name}</p>
+                    <p className="truncate font-medium">
+                      {device.name}
+                      {device.hasAgent && (
+                        <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-normal text-primary">
+                          Agent ulangan
+                        </span>
+                      )}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {device.ipAddress
                         ? `${device.ipAddress}:${device.port}`
@@ -145,6 +153,7 @@ function DevicesPageContent() {
                       )}
                     </Button>
                   )}
+                  <AgentKeyDialog device={device} onIssued={loadDevices} />
                   <DeviceFormDialog
                     device={device}
                     onSuccess={loadDevices}

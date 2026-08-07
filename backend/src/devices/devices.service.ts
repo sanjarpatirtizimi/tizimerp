@@ -3,9 +3,11 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DeviceStatus, Prisma } from '@prisma/client';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
@@ -94,6 +96,11 @@ export class DevicesService {
     return device;
   }
 
+  /** Same as `findOne`, but safe to return directly from the API. */
+  async findOnePublic(id: string) {
+    return this.sanitize(await this.findOne(id));
+  }
+
   async update(id: string, dto: UpdateDeviceDto) {
     const device = await this.findOne(id);
 
@@ -147,6 +154,58 @@ export class DevicesService {
     }
   }
 
+  /**
+   * Issues a brand-new API key for this device's local "relay agent" —
+   * invalidates any previously-issued key. Only the SHA-256 hash is stored;
+   * the plaintext is returned exactly once and must be copied into the
+   * relay agent's config immediately.
+   */
+  async generateAgentKey(id: string): Promise<{ agentKey: string }> {
+    await this.findOne(id);
+    const agentKey = randomBytes(24).toString('hex');
+    await this.prisma.device.update({
+      where: { id },
+      data: {
+        agentKeyHash: this.hashAgentKey(agentKey),
+        agentKeyCreatedAt: new Date(),
+      },
+    });
+    return { agentKey };
+  }
+
+  async revokeAgentKey(id: string): Promise<void> {
+    await this.findOne(id);
+    await this.prisma.device.update({
+      where: { id },
+      data: { agentKeyHash: null, agentKeyCreatedAt: null },
+    });
+  }
+
+  /** Used by AgentKeyGuard to authenticate relay-agent polling requests. */
+  async verifyAgentKey(deviceId: string, providedKey: string) {
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+    });
+    if (!device?.agentKeyHash) {
+      throw new UnauthorizedException(
+        'No agent key configured for this device',
+      );
+    }
+
+    const expected = Buffer.from(device.agentKeyHash);
+    const actual = Buffer.from(this.hashAgentKey(providedKey));
+    const isValid =
+      expected.length === actual.length && timingSafeEqual(expected, actual);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid agent key');
+    }
+    return device;
+  }
+
+  private hashAgentKey(key: string): string {
+    return createHash('sha256').update(key).digest('hex');
+  }
+
   async checkHealth(id: string) {
     const device = await this.findOne(id);
     if (!device.ipAddress || !device.username || !device.passwordEnc) {
@@ -165,11 +224,15 @@ export class DevicesService {
     return this.sanitize(updated);
   }
 
-  private sanitize<T extends { passwordEnc: string | null }>(
+  private sanitize<
+    T extends { passwordEnc: string | null; agentKeyHash: string | null },
+  >(
     device: T,
-  ): Omit<T, 'passwordEnc'> {
+  ): Omit<T, 'passwordEnc' | 'agentKeyHash'> & { hasAgent: boolean } {
     const rest: Partial<T> = { ...device };
+    const hasAgent = !!device.agentKeyHash;
     delete rest.passwordEnc;
-    return rest as Omit<T, 'passwordEnc'>;
+    delete rest.agentKeyHash;
+    return { ...(rest as Omit<T, 'passwordEnc' | 'agentKeyHash'>), hasAgent };
   }
 }

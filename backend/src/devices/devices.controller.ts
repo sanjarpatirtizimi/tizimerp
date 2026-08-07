@@ -36,7 +36,7 @@ export class DevicesController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.devicesService.findOne(id);
+    return this.devicesService.findOnePublic(id);
   }
 
   @Patch(':id')
@@ -56,5 +56,23 @@ export class DevicesController {
   @Roles(UserRole.SUPER_ADMIN)
   checkHealth(@Param('id') id: string) {
     return this.devicesService.checkHealth(id);
+  }
+
+  /**
+   * Issues a fresh API key for this device's local relay agent (see
+   * `AgentModule`). Returned exactly once — copy it into the agent's config
+   * immediately, it cannot be retrieved again afterwards.
+   */
+  @Post(':id/agent-key')
+  @Roles(UserRole.SUPER_ADMIN)
+  generateAgentKey(@Param('id') id: string) {
+    return this.devicesService.generateAgentKey(id);
+  }
+
+  @Delete(':id/agent-key')
+  @Roles(UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  revokeAgentKey(@Param('id') id: string) {
+    return this.devicesService.revokeAgentKey(id);
   }
 }

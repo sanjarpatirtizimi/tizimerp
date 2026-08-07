@@ -32,6 +32,8 @@ export interface Device {
   location: string | null;
   status: DeviceStatus;
   lastPingAt: string | null;
+  /** True if a local relay agent API key has been issued for this device. */
+  hasAgent: boolean;
   createdAt: string;
   updatedAt: string;
 }
