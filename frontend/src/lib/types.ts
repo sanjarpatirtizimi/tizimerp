@@ -26,9 +26,9 @@ export interface StaffUser {
 export interface Device {
   id: string;
   name: string;
-  ipAddress: string;
+  ipAddress: string | null;
   port: number;
-  username: string;
+  username: string | null;
   location: string | null;
   status: DeviceStatus;
   lastPingAt: string | null;
@@ -45,6 +45,7 @@ export interface DriverDeviceRegistration {
   syncStatus: SyncStatus;
   syncError: string | null;
   syncedAt: string | null;
+  pairingExpiresAt: string | null;
   createdAt: string;
 }
 

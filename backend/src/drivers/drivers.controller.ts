@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -59,6 +60,35 @@ export class DriversController {
     @CurrentUser() user: StaffJwtPayload,
   ) {
     return this.driversService.setManualFaceMapping(id, dto, user.sub);
+  }
+
+  @Post(':id/devices/:deviceId/pairing')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  startDevicePairing(
+    @Param('id') id: string,
+    @Param('deviceId') deviceId: string,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.startDevicePairing(id, deviceId, user.sub);
+  }
+
+  @Delete(':id/devices/:deviceId/pairing')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  cancelDevicePairing(
+    @Param('id') id: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.driversService.cancelDevicePairing(id, deviceId);
+  }
+
+  @Delete(':id/devices/:deviceId')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  unlinkDevice(
+    @Param('id') id: string,
+    @Param('deviceId') deviceId: string,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.unlinkDevice(id, deviceId, user.sub);
   }
 
   @Get()

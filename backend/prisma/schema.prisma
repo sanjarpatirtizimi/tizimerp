@@ -153,14 +153,18 @@ model RefreshToken {
 // HIKVISION DEVICES
 // ----------------------------------------------------------------------------
 
-/// A physical Hikvision face-recognition gate/terminal.
+/// A physical Hikvision face-recognition gate/terminal. May be created
+/// explicitly by an operator (with real ISAPI credentials, for push-based
+/// enrollment), OR auto-provisioned the first time it POSTs to our webhook
+/// with a device id/slug we've never seen before (no credentials — it's
+/// enrolled locally on the device itself, we only ever receive events).
 model Device {
   id          String       @id @default(cuid())
   name        String // e.g. "Main Gate", "Warehouse Entrance"
-  ipAddress   String
+  ipAddress   String? // only set for devices we control via ISAPI
   port        Int          @default(80)
-  username    String // ISAPI auth username
-  passwordEnc String // ISAPI auth password, encrypted at rest (app-layer AES)
+  username    String? // ISAPI auth username, if any
+  passwordEnc String? // ISAPI auth password, encrypted at rest, if any
   location    String?
   status      DeviceStatus @default(OFFLINE)
   lastPingAt  DateTime?
@@ -183,10 +187,15 @@ model DriverDeviceRegistration {
   driver          Driver     @relation(fields: [driverId], references: [id], onDelete: Cascade)
   deviceId        String
   device          Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  hikvisionFaceId String? // employeeNo/FaceID/FDID returned by the ISAPI call
+  hikvisionFaceId String? // employeeNo/FaceID/FDID returned by the ISAPI call, or claimed via pairing
   syncStatus      SyncStatus @default(PENDING)
   syncError       String?
   syncedAt        DateTime?
+  /// Set while this row is "armed" waiting for the driver to touch their
+  /// face on `device` for the first time — the next unmatched recognition
+  /// event from this device (before this expires) auto-claims this row by
+  /// filling in `hikvisionFaceId`. Null once confirmed (or if never armed).
+  pairingExpiresAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

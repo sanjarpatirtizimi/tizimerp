@@ -16,6 +16,7 @@ import { CreateDriverDto } from './dto/create-driver.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'drivers');
+const PAIRING_WINDOW_MS = 2 * 60 * 1000;
 
 @Injectable()
 export class DriversService {
@@ -226,6 +227,113 @@ export class DriversService {
         deviceId: dto.deviceId,
         hikvisionFaceId: dto.hikvisionFaceId,
       },
+    });
+
+    return this.findOne(driverId);
+  }
+
+  /**
+   * "Ulash rejimi" — operator explicitly picks ONE device (from the list of
+   * already-seen devices) to bind to this driver, and arms a 2-minute
+   * window during which the very next unrecognized face touch on THAT
+   * device auto-completes the link (see `RecognitionService.claimPendingPairing`).
+   * A driver can go through this once per device — e.g. once for the gate
+   * they leave through, again for the one they come back through — since
+   * `DriverDeviceRegistration` is keyed by (driverId, deviceId).
+   */
+  async startDevicePairing(
+    driverId: string,
+    deviceId: string,
+    operatorId: string,
+  ) {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+    });
+    if (!device) {
+      throw new NotFoundException(
+        'Bu qurilma hali tizimga signal yubormagan — avval qurilmani ishga tushiring',
+      );
+    }
+
+    const busy = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        deviceId,
+        hikvisionFaceId: null,
+        pairingExpiresAt: { gt: new Date() },
+        NOT: { driverId },
+      },
+    });
+    if (busy) {
+      throw new ConflictException(
+        "Bu qurilma hozir boshqa haydovchini kutmoqda. Bir necha daqiqadan so'ng qayta urinib ko'ring.",
+      );
+    }
+
+    const pairingExpiresAt = new Date(Date.now() + PAIRING_WINDOW_MS);
+    await this.prisma.driverDeviceRegistration.upsert({
+      where: { driverId_deviceId: { driverId, deviceId } },
+      create: {
+        driverId,
+        deviceId,
+        syncStatus: SyncStatus.PENDING,
+        pairingExpiresAt,
+      },
+      update: {
+        hikvisionFaceId: null,
+        syncStatus: SyncStatus.PENDING,
+        syncError: null,
+        syncedAt: null,
+        pairingExpiresAt,
+      },
+    });
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_DEVICE_PAIRING_STARTED',
+      entityType: 'Driver',
+      entityId: driverId,
+      metadata: { deviceId },
+    });
+
+    return { deviceId, pairingExpiresAt };
+  }
+
+  /** Cancels an armed-but-unconfirmed pairing window before it expires on its own. */
+  async cancelDevicePairing(driverId: string, deviceId: string) {
+    const registration = await this.prisma.driverDeviceRegistration.findUnique({
+      where: { driverId_deviceId: { driverId, deviceId } },
+    });
+    if (!registration || registration.hikvisionFaceId)
+      return this.findOne(driverId);
+
+    await this.prisma.driverDeviceRegistration.delete({
+      where: { id: registration.id },
+    });
+    return this.findOne(driverId);
+  }
+
+  /** Unlinks a device that was already successfully paired with this driver. */
+  async unlinkDevice(driverId: string, deviceId: string, operatorId: string) {
+    const registration = await this.prisma.driverDeviceRegistration.findUnique({
+      where: { driverId_deviceId: { driverId, deviceId } },
+    });
+    if (!registration) throw new NotFoundException("Bog'lanish topilmadi");
+
+    await this.prisma.driverDeviceRegistration.delete({
+      where: { id: registration.id },
+    });
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_DEVICE_UNLINKED',
+      entityType: 'Driver',
+      entityId: driverId,
+      metadata: { deviceId },
     });
 
     return this.findOne(driverId);

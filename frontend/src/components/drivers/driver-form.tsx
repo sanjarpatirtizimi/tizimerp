@@ -33,7 +33,10 @@ export function DriverForm() {
   useEffect(() => {
     devicesApi
       .list()
-      .then(setDevices)
+      // Only devices with real ISAPI credentials support push enrollment
+      // here; zero-config (webhook-only) devices are linked afterwards via
+      // "Ulash rejimi" on the driver's own page.
+      .then((all) => setDevices(all.filter((d) => d.ipAddress)))
       .catch(() => undefined);
   }, []);
 
@@ -171,34 +174,35 @@ export function DriverForm() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Qurilmalarga ulash</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {devices.length === 0 && (
-            <p className="text-sm text-muted-foreground">Hozircha qurilmalar sozlanmagan.</p>
-          )}
-          {devices.map((device) => (
-            <label
-              key={device.id}
-              className="flex items-center gap-3 rounded-md border p-3 text-sm"
-            >
-              <Checkbox
-                checked={selectedDeviceIds.includes(device.id)}
-                onCheckedChange={(checked) => toggleDevice(device.id, checked === true)}
-              />
-              <span className="flex-1">
-                {device.name}
-                <span className="block text-xs text-muted-foreground">{device.ipAddress}</span>
-              </span>
-            </label>
-          ))}
-          <p className="text-xs text-muted-foreground">
-            Tanlangan qurilmaga ulash uchun rasm talab qilinadi.
-          </p>
-        </CardContent>
-      </Card>
+      {devices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Qurilmalarga ulash (ilg&apos;or, ixtiyoriy)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Bu faqat ISAPI orqali sozlangan qurilmalar uchun — rasm shu zahoti qurilmaga
+              yuklanadi. Oddiy holatda buni tashlab, keyinroq haydovchi sahifasidan
+              &quot;Ulash rejimi&quot; orqali qurilmaga ulang.
+            </p>
+            {devices.map((device) => (
+              <label
+                key={device.id}
+                className="flex items-center gap-3 rounded-md border p-3 text-sm"
+              >
+                <Checkbox
+                  checked={selectedDeviceIds.includes(device.id)}
+                  onCheckedChange={(checked) => toggleDevice(device.id, checked === true)}
+                />
+                <span className="flex-1">
+                  {device.name}
+                  <span className="block text-xs text-muted-foreground">{device.ipAddress}</span>
+                </span>
+              </label>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
         {isSubmitting && <Loader2 className="animate-spin" />}

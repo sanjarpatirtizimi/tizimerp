@@ -19,8 +19,12 @@ import { devicesApi } from "@/lib/api/devices";
 import type { Device } from "@/lib/types";
 
 /**
- * Add/edit form for a Hikvision device. In edit mode, the password field is
- * optional — leave it blank to keep the device's current stored password.
+ * Add/edit form for a Hikvision device. Devices normally auto-register
+ * themselves the first time they send a recognition webhook — this dialog
+ * is only needed if you also want the app to control the device directly
+ * via ISAPI (push face enrollment, ping), which requires real IP/login
+ * credentials. In edit mode, the password field is optional — leave it
+ * blank to keep the device's current stored password.
  */
 export function DeviceFormDialog({
   device,
@@ -48,9 +52,9 @@ export function DeviceFormDialog({
     // re-opens (e.g. after an earlier edit/ping refreshed the device list).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(device.name);
-    setIpAddress(device.ipAddress);
+    setIpAddress(device.ipAddress ?? "");
     setPort(String(device.port));
-    setUsername(device.username);
+    setUsername(device.username ?? "");
     setLocation(device.location ?? "");
     setPassword("");
   }, [open, device]);
@@ -62,9 +66,9 @@ export function DeviceFormDialog({
       if (isEdit && device) {
         await devicesApi.update(device.id, {
           name,
-          ipAddress,
+          ipAddress: ipAddress || undefined,
           port: Number(port) || 80,
-          username,
+          username: username || undefined,
           ...(password ? { password } : {}),
           location: location || undefined,
         });
@@ -72,10 +76,10 @@ export function DeviceFormDialog({
       } else {
         await devicesApi.create({
           name,
-          ipAddress,
+          ipAddress: ipAddress || undefined,
           port: Number(port) || 80,
-          username,
-          password,
+          username: username || undefined,
+          password: password || undefined,
           location: location || undefined,
         });
         toast.success("Qurilma qo'shildi");
@@ -112,15 +116,20 @@ export function DeviceFormDialog({
               <Label htmlFor="dev-name">Nomi</Label>
               <Input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Qurilma odatda birinchi signal yuborganda o&apos;zi ro&apos;yxatdan o&apos;tadi.
+              Quyidagi maydonlar faqat qurilmani ISAPI orqali to&apos;g&apos;ridan-to&apos;g&apos;ri
+              boshqarish (yuz yuklash, ping) kerak bo&apos;lsa to&apos;ldiriladi — aks holda
+              bo&apos;sh qoldiring.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="dev-ip">IP manzil</Label>
+                <Label htmlFor="dev-ip">IP manzil (ixtiyoriy)</Label>
                 <Input
                   id="dev-ip"
                   placeholder="192.168.1.10"
                   value={ipAddress}
                   onChange={(e) => setIpAddress(e.target.value)}
-                  required
                 />
               </div>
               <div className="space-y-2">
@@ -130,25 +139,17 @@ export function DeviceFormDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="dev-user">Foydalanuvchi nomi</Label>
-                <Input
-                  id="dev-user"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                />
+                <Label htmlFor="dev-user">Foydalanuvchi nomi (ixtiyoriy)</Label>
+                <Input id="dev-user" value={username} onChange={(e) => setUsername(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dev-pass">
-                  Parol {isEdit && <span className="text-muted-foreground">(ixtiyoriy)</span>}
-                </Label>
+                <Label htmlFor="dev-pass">Parol (ixtiyoriy)</Label>
                 <Input
                   id="dev-pass"
                   type="password"
                   placeholder={isEdit ? "O'zgartirmaslik uchun bo'sh qoldiring" : undefined}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required={!isEdit}
                 />
               </div>
             </div>

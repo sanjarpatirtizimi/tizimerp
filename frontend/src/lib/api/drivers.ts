@@ -58,4 +58,19 @@ export const driversApi = {
     apiClient
       .post<Driver>(`/drivers/${id}/manual-face-mapping`, { deviceId, hikvisionFaceId })
       .then((r) => r.data),
+
+  startDevicePairing: (id: string, deviceId: string) =>
+    apiClient
+      .post<{ deviceId: string; pairingExpiresAt: string }>(
+        `/drivers/${id}/devices/${deviceId}/pairing`,
+      )
+      .then((r) => r.data),
+
+  cancelDevicePairing: (id: string, deviceId: string) =>
+    apiClient
+      .delete<Driver>(`/drivers/${id}/devices/${deviceId}/pairing`)
+      .then((r) => r.data),
+
+  unlinkDevice: (id: string, deviceId: string) =>
+    apiClient.delete<Driver>(`/drivers/${id}/devices/${deviceId}`).then((r) => r.data),
 };

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -27,13 +28,15 @@ export class DevicesService {
 
   async create(dto: CreateDeviceDto) {
     const port = dto.port ?? 80;
-    const existing = await this.prisma.device.findUnique({
-      where: { ipAddress_port: { ipAddress: dto.ipAddress, port } },
-    });
-    if (existing) {
-      throw new ConflictException(
-        'A device with this IP address and port already exists',
-      );
+    if (dto.ipAddress) {
+      const existing = await this.prisma.device.findFirst({
+        where: { ipAddress: dto.ipAddress, port },
+      });
+      if (existing) {
+        throw new ConflictException(
+          'A device with this IP address and port already exists',
+        );
+      }
     }
 
     const device = await this.prisma.device.create({
@@ -42,13 +45,40 @@ export class DevicesService {
         ipAddress: dto.ipAddress,
         port,
         username: dto.username,
-        passwordEnc: encryptSecret(dto.password, this.encKey),
+        passwordEnc: dto.password
+          ? encryptSecret(dto.password, this.encKey)
+          : undefined,
         location: dto.location,
         status: DeviceStatus.OFFLINE,
       },
     });
 
     return this.sanitize(device);
+  }
+
+  /**
+   * Called from the recognition webhook when the `:deviceId` URL segment
+   * doesn't match any known device. Rather than rejecting the request,
+   * silently registers a new zero-config Device row so the operator never
+   * has to "add" a device manually first — they just pick any identifier
+   * (e.g. "darvoza1") when configuring the physical terminal's HTTP
+   * Listening Host, and it shows up in the Qurilmalar list automatically.
+   * The shared webhook secret is what actually gates this, not this check.
+   */
+  async findOrAutoCreate(deviceKey: string) {
+    const existing = await this.prisma.device.findUnique({
+      where: { id: deviceKey },
+    });
+    if (existing) return existing;
+
+    return this.prisma.device.create({
+      data: {
+        id: deviceKey,
+        name: deviceKey,
+        status: DeviceStatus.ONLINE,
+        lastPingAt: new Date(),
+      },
+    });
   }
 
   async findAll() {
@@ -69,9 +99,12 @@ export class DevicesService {
 
     const nextIpAddress = dto.ipAddress ?? device.ipAddress;
     const nextPort = dto.port ?? device.port;
-    if (nextIpAddress !== device.ipAddress || nextPort !== device.port) {
-      const conflict = await this.prisma.device.findUnique({
-        where: { ipAddress_port: { ipAddress: nextIpAddress, port: nextPort } },
+    if (
+      nextIpAddress &&
+      (nextIpAddress !== device.ipAddress || nextPort !== device.port)
+    ) {
+      const conflict = await this.prisma.device.findFirst({
+        where: { ipAddress: nextIpAddress, port: nextPort },
       });
       if (conflict && conflict.id !== id) {
         throw new ConflictException(
@@ -116,6 +149,11 @@ export class DevicesService {
 
   async checkHealth(id: string) {
     const device = await this.findOne(id);
+    if (!device.ipAddress || !device.username || !device.passwordEnc) {
+      throw new BadRequestException(
+        'This device has no ISAPI credentials configured (IP/username/password) — nothing to ping. It only receives webhook events.',
+      );
+    }
     const online = await this.hikvisionService.ping(device);
     const updated = await this.prisma.device.update({
       where: { id },
@@ -127,7 +165,7 @@ export class DevicesService {
     return this.sanitize(updated);
   }
 
-  private sanitize<T extends { passwordEnc: string }>(
+  private sanitize<T extends { passwordEnc: string | null }>(
     device: T,
   ): Omit<T, 'passwordEnc'> {
     const rest: Partial<T> = { ...device };

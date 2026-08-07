@@ -1,14 +1,11 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeviceStatus,
   DriverStatus,
   Prisma,
   RecognitionEventStatus,
+  SyncStatus,
   TransactionType,
 } from '@prisma/client';
 import { timingSafeEqual } from 'crypto';
@@ -60,12 +57,19 @@ export class RecognitionService {
     rawEventLog: unknown,
     photo?: Buffer,
   ): Promise<RecognitionOutcome> {
-    const device = await this.prisma.device.findUnique({
+    // Zero-config device onboarding: the first event from a never-before-seen
+    // deviceId auto-registers it (see class doc on the controller). No
+    // manual "Qurilma qo'shish" step required.
+    await this.prisma.device.upsert({
       where: { id: deviceId },
+      create: {
+        id: deviceId,
+        name: deviceId,
+        status: DeviceStatus.ONLINE,
+        lastPingAt: new Date(),
+      },
+      update: { status: DeviceStatus.ONLINE, lastPingAt: new Date() },
     });
-    if (!device) {
-      throw new NotFoundException(`Unknown device: ${deviceId}`);
-    }
 
     const parsed = await parseEventLog(rawEventLog);
 
@@ -218,10 +222,14 @@ export class RecognitionService {
    * Drivers enrolled through our platform have their device Person ID set
    * equal to `driver.id` (see `HikvisionService.upsertPerson`). Drivers
    * enrolled directly on the device's own local UI instead get an
-   * arbitrary Person ID assigned by the device — for those, staff record
-   * the real mapping via `DriversService.setManualFaceMapping`, stored in
-   * `DriverDeviceRegistration.hikvisionFaceId`. Check that mapping first,
-   * then fall back to treating employeeNo as our driver.id directly.
+   * arbitrary Person ID assigned by the device — those are matched via
+   * `DriverDeviceRegistration.hikvisionFaceId`, which gets filled in either:
+   *   (a) by staff manually (`DriversService.setManualFaceMapping`), or
+   *   (b) automatically here, if this device has a "Ulash rejimi" pairing
+   *       window currently armed (`pairingExpiresAt` in the future) — the
+   *       FIRST unrecognized face touch on that device claims it.
+   * Falls back to treating employeeNo as our driver.id directly, for
+   * devices enrolled the old way (direct ISAPI push from this platform).
    */
   private async resolveDriverByEmployeeNo(
     deviceId: string,
@@ -233,7 +241,45 @@ export class RecognitionService {
     });
     if (registration) return registration.driver;
 
+    const claimed = await this.claimPendingPairing(deviceId, employeeNo);
+    if (claimed) return claimed;
+
     return this.prisma.driver.findUnique({ where: { id: employeeNo } });
+  }
+
+  /**
+   * Looks for a `DriverDeviceRegistration` on this device that's currently
+   * "armed" (an operator clicked "Ulash" for a specific driver+device pair
+   * and is waiting for the driver to touch their face) and, if found,
+   * fills in the Person ID the device just reported — completing the
+   * pairing with zero manual data entry.
+   */
+  private async claimPendingPairing(deviceId: string, employeeNo: string) {
+    const pending = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        deviceId,
+        hikvisionFaceId: null,
+        pairingExpiresAt: { gt: new Date() },
+      },
+      include: { driver: true },
+    });
+    if (!pending) return null;
+
+    await this.prisma.driverDeviceRegistration.update({
+      where: { id: pending.id },
+      data: {
+        hikvisionFaceId: employeeNo,
+        syncStatus: SyncStatus.SYNCED,
+        syncedAt: new Date(),
+        pairingExpiresAt: null,
+      },
+    });
+
+    this.logger.log(
+      `[${deviceId}] pairing claimed: driver ${pending.driverId} <- Person ID "${employeeNo}"`,
+    );
+
+    return pending.driver;
   }
 
   /** Persists the face snapshot the device attached to the event, for audit purposes. */

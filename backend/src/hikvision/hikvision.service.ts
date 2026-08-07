@@ -36,6 +36,11 @@ export class HikvisionService {
   }
 
   private clientFor(device: Device): DigestHttpClient {
+    if (!device.ipAddress || !device.username || !device.passwordEnc) {
+      throw new InternalServerErrorException(
+        `Device "${device.name}" has no ISAPI credentials configured (IP/username/password) — it can only receive webhook events, not be controlled directly.`,
+      );
+    }
     const password = decryptSecret(device.passwordEnc, this.encKey);
     const baseURL = `http://${device.ipAddress}:${device.port}`;
     return new DigestHttpClient(baseURL, device.username, password);

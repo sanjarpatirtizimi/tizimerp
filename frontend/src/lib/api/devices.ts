@@ -3,10 +3,11 @@ import type { Device } from "../types";
 
 export interface CreateDevicePayload {
   name: string;
-  ipAddress: string;
+  /** Optional: only needed if this app should control the device via ISAPI. */
+  ipAddress?: string;
   port?: number;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
   location?: string;
 }
 

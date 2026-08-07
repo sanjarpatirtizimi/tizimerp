@@ -14,8 +14,10 @@ export class CreateDeviceDto {
   @IsNotEmpty()
   name: string;
 
+  /** Only needed if you want this app to control the device via ISAPI (push enrollment, ping). */
   @IsIP()
-  ipAddress: string;
+  @IsOptional()
+  ipAddress?: string;
 
   @Type(() => Number)
   @IsInt()
@@ -25,12 +27,12 @@ export class CreateDeviceDto {
   port?: number;
 
   @IsString()
-  @IsNotEmpty()
-  username: string;
+  @IsOptional()
+  username?: string;
 
   @IsString()
-  @IsNotEmpty()
-  password: string;
+  @IsOptional()
+  password?: string;
 
   @IsString()
   @IsOptional()

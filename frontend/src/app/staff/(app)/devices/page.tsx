@@ -116,7 +116,9 @@ function DevicesPageContent() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{device.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {device.ipAddress}:{device.port}
+                      {device.ipAddress
+                        ? `${device.ipAddress}:${device.port}`
+                        : "Webhook orqali avtomatik ulangan"}
                       {device.location ? ` • ${device.location}` : ""}
                     </p>
                     {device.lastPingAt && (
@@ -128,19 +130,21 @@ function DevicesPageContent() {
                   <Badge className={cn(statusStyles[device.status])} variant="outline">
                     {deviceStatusLabels[device.status]}
                   </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handlePing(device.id)}
-                    disabled={pingingId === device.id}
-                    aria-label="Ulanishni tekshirish"
-                  >
-                    {pingingId === device.id ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <RefreshCw />
-                    )}
-                  </Button>
+                  {device.ipAddress && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handlePing(device.id)}
+                      disabled={pingingId === device.id}
+                      aria-label="Ulanishni tekshirish"
+                    >
+                      {pingingId === device.id ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <RefreshCw />
+                      )}
+                    </Button>
+                  )}
                   <DeviceFormDialog
                     device={device}
                     onSuccess={loadDevices}
