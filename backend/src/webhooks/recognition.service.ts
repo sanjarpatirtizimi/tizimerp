@@ -254,14 +254,17 @@ export class RecognitionService {
    * fills in the Person ID the device just reported — completing the
    * pairing with zero manual data entry.
    *
-   * Safety check: some terminals reuse the same Person ID for the same
-   * driver across multiple physical devices (e.g. driver enrolled as "1"
-   * on every gate). If the Person ID reported here is ALREADY confirmed
-   * for a *different* driver on any other device, we must not hijack it
-   * into the currently-armed pending registration (that would silently
-   * steal one driver's face mapping and attach it to someone else). In
-   * that case we instead auto-link the already-known driver to this
-   * device and leave the pending window open for its real driver.
+   * Safety check: Person IDs are NOT guaranteed to be globally unique
+   * across different physical terminals — many devices auto-assign local
+   * sequential IDs ("1", "2", ...) independently, so "1" on one gate can
+   * belong to a completely different person than "1" on another gate. If
+   * this Person ID is ALREADY confirmed for a *different* driver anywhere
+   * else in the system, we cannot safely assume it's the same physical
+   * person here. To avoid ever crediting a stamp to the wrong driver, we
+   * refuse the claim entirely: nobody is matched for this event, and the
+   * pending pairing window is left untouched so the real driver can still
+   * complete it before it expires. The operator can retry with a face
+   * that hasn't been used elsewhere, or investigate manually.
    */
   private async claimPendingPairing(deviceId: string, employeeNo: string) {
     const pending = await this.prisma.driverDeviceRegistration.findFirst({
@@ -281,38 +284,18 @@ export class RecognitionService {
           syncStatus: SyncStatus.SYNCED,
           NOT: { driverId: pending.driverId },
         },
-        include: { driver: true },
       },
     );
 
     if (knownElsewhere) {
       this.logger.warn(
-        `[${deviceId}] Person ID "${employeeNo}" already belongs to driver ` +
-          `${knownElsewhere.driverId} (seen on device ${knownElsewhere.deviceId}). ` +
-          `Ignoring for pending pairing of driver ${pending.driverId} to avoid ` +
-          `misattributing the face; auto-linking the known driver instead.`,
+        `[${deviceId}] Person ID "${employeeNo}" is already confirmed for a ` +
+          `different driver (${knownElsewhere.driverId}, on device ` +
+          `${knownElsewhere.deviceId}). Refusing to claim it for the pending ` +
+          `pairing of driver ${pending.driverId} — ambiguous Person ID, no ` +
+          `one will be matched for this event.`,
       );
-
-      await this.prisma.driverDeviceRegistration.upsert({
-        where: {
-          driverId_deviceId: { driverId: knownElsewhere.driverId, deviceId },
-        },
-        create: {
-          driverId: knownElsewhere.driverId,
-          deviceId,
-          hikvisionFaceId: employeeNo,
-          syncStatus: SyncStatus.SYNCED,
-          syncedAt: new Date(),
-        },
-        update: {
-          hikvisionFaceId: employeeNo,
-          syncStatus: SyncStatus.SYNCED,
-          syncedAt: new Date(),
-          pairingExpiresAt: null,
-        },
-      });
-
-      return knownElsewhere.driver;
+      return null;
     }
 
     await this.prisma.driverDeviceRegistration.update({
