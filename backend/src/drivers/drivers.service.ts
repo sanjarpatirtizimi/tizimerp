@@ -16,7 +16,7 @@ import { CreateDriverDto } from './dto/create-driver.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'drivers');
-const PAIRING_WINDOW_MS = 2 * 60 * 1000;
+const PAIRING_WINDOW_MS = 3 * 60 * 1000;
 
 @Injectable()
 export class DriversService {
