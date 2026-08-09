@@ -253,6 +253,15 @@ export class RecognitionService {
    * and is waiting for the driver to touch their face) and, if found,
    * fills in the Person ID the device just reported — completing the
    * pairing with zero manual data entry.
+   *
+   * Safety check: some terminals reuse the same Person ID for the same
+   * driver across multiple physical devices (e.g. driver enrolled as "1"
+   * on every gate). If the Person ID reported here is ALREADY confirmed
+   * for a *different* driver on any other device, we must not hijack it
+   * into the currently-armed pending registration (that would silently
+   * steal one driver's face mapping and attach it to someone else). In
+   * that case we instead auto-link the already-known driver to this
+   * device and leave the pending window open for its real driver.
    */
   private async claimPendingPairing(deviceId: string, employeeNo: string) {
     const pending = await this.prisma.driverDeviceRegistration.findFirst({
@@ -264,6 +273,47 @@ export class RecognitionService {
       include: { driver: true },
     });
     if (!pending) return null;
+
+    const knownElsewhere = await this.prisma.driverDeviceRegistration.findFirst(
+      {
+        where: {
+          hikvisionFaceId: employeeNo,
+          syncStatus: SyncStatus.SYNCED,
+          NOT: { driverId: pending.driverId },
+        },
+        include: { driver: true },
+      },
+    );
+
+    if (knownElsewhere) {
+      this.logger.warn(
+        `[${deviceId}] Person ID "${employeeNo}" already belongs to driver ` +
+          `${knownElsewhere.driverId} (seen on device ${knownElsewhere.deviceId}). ` +
+          `Ignoring for pending pairing of driver ${pending.driverId} to avoid ` +
+          `misattributing the face; auto-linking the known driver instead.`,
+      );
+
+      await this.prisma.driverDeviceRegistration.upsert({
+        where: {
+          driverId_deviceId: { driverId: knownElsewhere.driverId, deviceId },
+        },
+        create: {
+          driverId: knownElsewhere.driverId,
+          deviceId,
+          hikvisionFaceId: employeeNo,
+          syncStatus: SyncStatus.SYNCED,
+          syncedAt: new Date(),
+        },
+        update: {
+          hikvisionFaceId: employeeNo,
+          syncStatus: SyncStatus.SYNCED,
+          syncedAt: new Date(),
+          pairingExpiresAt: null,
+        },
+      });
+
+      return knownElsewhere.driver;
+    }
 
     await this.prisma.driverDeviceRegistration.update({
       where: { id: pending.id },
