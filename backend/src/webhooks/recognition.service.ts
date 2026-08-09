@@ -308,11 +308,24 @@ export class RecognitionService {
       },
     });
 
+    // Pairing is the enrollment confirmation for new drivers — activate them
+    // so the current (and future) recognition events can issue stamps.
+    let driver = pending.driver;
+    if (driver.status === DriverStatus.PENDING) {
+      driver = await this.prisma.driver.update({
+        where: { id: driver.id },
+        data: { status: DriverStatus.ACTIVE },
+      });
+      this.logger.log(
+        `[${deviceId}] driver ${driver.id} activated after successful pairing`,
+      );
+    }
+
     this.logger.log(
       `[${deviceId}] pairing claimed: driver ${pending.driverId} <- Person ID "${employeeNo}"`,
     );
 
-    return pending.driver;
+    return driver;
   }
 
   /** Persists the face snapshot the device attached to the event, for audit purposes. */
