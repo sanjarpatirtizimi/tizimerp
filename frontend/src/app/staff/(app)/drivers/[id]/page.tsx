@@ -12,6 +12,7 @@ import { TransactionList } from "@/components/wallet/transaction-list";
 import { CashAdvanceDialog } from "@/components/drivers/cash-advance-dialog";
 import { GoodsExchangeDialog } from "@/components/drivers/goods-exchange-dialog";
 import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-dialog";
+import { DeviceEnrollmentPanel } from "@/components/drivers/device-enrollment-panel";
 import { DevicePairingPanel } from "@/components/drivers/device-pairing-panel";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
@@ -108,6 +109,10 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
         <CashAdvanceDialog driverId={id} onSuccess={refresh} />
         <GoodsExchangeDialog driverId={id} onSuccess={refresh} />
       </div>
+
+      {driver && (
+        <DeviceEnrollmentPanel driver={driver} onChanged={loadDriver} />
+      )}
 
       {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
 

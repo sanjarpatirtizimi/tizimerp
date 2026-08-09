@@ -11,7 +11,7 @@ import {
   SyncStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { HikvisionService } from '../hikvision/hikvision.service';
@@ -45,6 +45,12 @@ export class DriversService {
     if (existing) {
       throw new ConflictException(
         'A driver with this phone number already exists',
+      );
+    }
+
+    if (dto.deviceIds?.length && !photo) {
+      throw new BadRequestException(
+        "Qurilmaga avtomatik yuklash uchun haydovchi rasmi majburiy",
       );
     }
 
@@ -90,6 +96,42 @@ export class DriversService {
     return this.findOne(driver.id);
   }
 
+  /**
+   * Re-queues face push for selected devices using the photo already stored
+   * on the driver record. Person ID on the device is always `driver.id`.
+   */
+  async requeueEnrollment(
+    driverId: string,
+    deviceIds: string[],
+    operatorId: string,
+  ) {
+    if (!deviceIds.length) {
+      throw new BadRequestException('Kamida bitta qurilma tanlang');
+    }
+
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (!driver.photoUrl) {
+      throw new BadRequestException(
+        "Haydovchida rasm yo'q — avval rasm yuklab qayta urinib ko'ring",
+      );
+    }
+
+    const absolutePath = join(process.cwd(), driver.photoUrl.replace(/^\//, ''));
+    let photoBuffer: Buffer;
+    try {
+      photoBuffer = await readFile(absolutePath);
+    } catch {
+      throw new BadRequestException(
+        "Saqlangan rasm fayli topilmadi — haydovchiga yangi rasm yuklang",
+      );
+    }
+
+    return this.enrollOnDevices(driverId, deviceIds, photoBuffer, operatorId);
+  }
+
   async enrollOnDevices(
     driverId: string,
     deviceIds: string[],
@@ -107,20 +149,34 @@ export class DriversService {
     let anySynced = false;
 
     for (const device of devices) {
+      // Always reset to a clean agent/ISAPI job: Person ID will be driver.id
+      // after a successful push. Clear any prior Ulash window so the relay
+      // agent never confuses a pairing wait with an enrollment job.
       const registration = await this.prisma.driverDeviceRegistration.upsert({
         where: { driverId_deviceId: { driverId, deviceId: device.id } },
         create: {
           driverId,
           deviceId: device.id,
           syncStatus: SyncStatus.PENDING,
+          hikvisionFaceId: null,
+          pairingExpiresAt: null,
+          syncError: null,
+          syncedAt: null,
         },
-        update: { syncStatus: SyncStatus.PENDING, syncError: null },
+        update: {
+          syncStatus: SyncStatus.PENDING,
+          hikvisionFaceId: null,
+          pairingExpiresAt: null,
+          syncError: null,
+          syncedAt: null,
+        },
       });
 
       if (device.agentKeyHash) {
-        // A local relay agent is configured for this device — it'll poll
-        // `AgentController.listPending` and push the face itself over the
-        // local network within a few seconds. Nothing more to do here.
+        // Local relay agent will poll listPending and push employeeNo=driver.id.
+        this.logger.log(
+          `Queued agent enrollment for driver ${driverId} on device ${device.id} (Person ID = driver.id)`,
+        );
         continue;
       }
 

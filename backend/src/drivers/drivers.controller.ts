@@ -17,6 +17,7 @@ import { DriversService } from './drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
+import { RequeueEnrollmentDto } from './dto/requeue-enrollment.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -45,11 +46,26 @@ export class DriversController {
   enroll(
     @Param('id') id: string,
     @Body('deviceIds') deviceIds: string,
-    @UploadedFile() photo: Express.Multer.File,
+    @UploadedFile() photo: Express.Multer.File | undefined,
     @CurrentUser() user: StaffJwtPayload,
   ) {
     const ids = JSON.parse(deviceIds) as string[];
-    return this.driversService.enrollOnDevices(id, ids, photo.buffer, user.sub);
+    // Prefer a freshly uploaded photo; otherwise re-queue from the stored one.
+    if (photo?.buffer?.length) {
+      return this.driversService.enrollOnDevices(id, ids, photo.buffer, user.sub);
+    }
+    return this.driversService.requeueEnrollment(id, ids, user.sub);
+  }
+
+  /** Re-queue face push to devices using the driver's already-stored photo. */
+  @Post(':id/requeue-enrollment')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  requeueEnrollment(
+    @Param('id') id: string,
+    @Body() dto: RequeueEnrollmentDto,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.requeueEnrollment(id, dto.deviceIds, user.sub);
   }
 
   @Post(':id/manual-face-mapping')

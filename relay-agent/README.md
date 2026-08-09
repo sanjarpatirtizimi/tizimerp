@@ -4,15 +4,17 @@ Bu — Face ID qurilmasi bilan **bir xil Wi-Fi/LAN tarmog'ida** turgan planshet 
 kompyuterga o'rnatiladigan kichik fon dasturi. U doim ishlab turadi va quyidagini
 avtomatik bajaradi:
 
-1. Har 1.5 soniyada Sanjar Patir serveridan "yangi qo'shilgan haydovchilar bormi?"
+1. Har ~1 soniyada Sanjar Patir serveridan "yangi qo'shilgan haydovchilar bormi?"
    deb so'raydi.
 2. Topilgan har bir haydovchi uchun uning rasmini serverdan yuklab oladi.
 3. Rasmni **to'g'ridan-to'g'ri, mahalliy tarmoq orqali** (internet orqali emas)
-   Face ID qurilmasiga yozadi.
+   Face ID qurilmasiga yozadi. Person ID sifatida platformadagi unique haydovchi
+   ID ishlatiladi — qurilmadagi oddiy "1", "2" raqamlari emas, shuning uchun
+   haydovchilar chalkashmaydi.
 4. Natijani (muvaffaqiyatli/xato) serverga qaytarib beradi.
 
-Bu jarayonda operator hech narsaga qo'l tegizmaydi — ilovada haydovchi qo'shilgach,
-1-2 soniya ichida u avtomatik qurilmaga yoziladi.
+Bu jarayonda operator hech narsaga qo'l tegizmaydi — ilovada haydovchi + rasm
+qo'shilgach, bir necha soniya ichida u avtomatik qurilmaga yoziladi.
 
 ## O'rnatish (bir marta)
 

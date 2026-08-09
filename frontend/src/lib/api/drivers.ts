@@ -40,16 +40,22 @@ export const driversApi = {
       })
       .then((r) => r.data),
 
-  enroll: (id: string, deviceIds: string[], photo: File) => {
+  enroll: (id: string, deviceIds: string[], photo?: File) => {
     const form = new FormData();
     form.append("deviceIds", JSON.stringify(deviceIds));
-    form.append("photo", photo);
+    if (photo) form.append("photo", photo);
     return apiClient
       .post<Driver>(`/drivers/${id}/enroll`, form, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       .then((r) => r.data);
   },
+
+  /** Re-queue face push using the driver's already-stored photo. */
+  requeueEnrollment: (id: string, deviceIds: string[]) =>
+    apiClient
+      .post<Driver>(`/drivers/${id}/requeue-enrollment`, { deviceIds })
+      .then((r) => r.data),
 
   setStatus: (id: string, status: DriverStatus) =>
     apiClient.patch<Driver>(`/drivers/${id}/status`, { status }).then((r) => r.data),

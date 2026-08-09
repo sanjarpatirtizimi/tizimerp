@@ -33,11 +33,13 @@ export function DriverForm() {
   useEffect(() => {
     devicesApi
       .list()
-      // Only devices that can actually receive an automatic push — either
-      // directly (real ISAPI credentials) or via a local relay agent —
-      // support enrollment here. Plain webhook-only devices are linked
-      // afterwards via "Ulash rejimi" on the driver's own page.
-      .then((all) => setDevices(all.filter((d) => d.ipAddress || d.hasAgent)))
+      .then((all) => {
+        const enrollable = all.filter((d) => d.ipAddress || d.hasAgent);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load
+        setDevices(enrollable);
+        // Default: select every device that has a relay agent (safest primary path).
+        setSelectedDeviceIds(enrollable.filter((d) => d.hasAgent).map((d) => d.id));
+      })
       .catch(() => undefined);
   }, []);
 
@@ -48,7 +50,9 @@ export function DriverForm() {
   }
 
   function toggleDevice(id: string, checked: boolean) {
-    setSelectedDeviceIds((prev) => (checked ? [...prev, id] : prev.filter((d) => d !== id)));
+    setSelectedDeviceIds((prev) =>
+      checked ? [...prev, id] : prev.filter((d) => d !== id),
+    );
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -57,6 +61,15 @@ export function DriverForm() {
       toast.error("To'liq ism va telefon raqami kiritilishi shart");
       return;
     }
+    if (selectedDeviceIds.length > 0 && !photo) {
+      toast.error("Qurilmaga yuklash uchun haydovchi rasmi majburiy");
+      return;
+    }
+    if (!photo) {
+      toast.error("Yuz rasmi majburiy — chalkashmaslik uchun unique ID bilan yuklanadi");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const driver = await driversApi.create({
@@ -68,7 +81,11 @@ export function DriverForm() {
         deviceIds: selectedDeviceIds,
         photo,
       });
-      toast.success(`${driver.fullName} muvaffaqiyatli ro'yxatdan o'tkazildi`);
+      toast.success(
+        selectedDeviceIds.length > 0
+          ? `${driver.fullName} yaratildi — qurilmalarga yuklash boshlandi`
+          : `${driver.fullName} muvaffaqiyatli ro'yxatdan o'tkazildi`,
+      );
       router.push(`/staff/drivers/${driver.id}`);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Haydovchini ro'yxatdan o'tkazib bo'lmadi"));
@@ -121,12 +138,18 @@ export function DriverForm() {
             )}
           </div>
           <p className="text-center text-xs text-muted-foreground">
-            Rasm Hikvision yuz tanish tizimiga ro&apos;yxatga olish uchun ishlatiladi
+            Aniq yuz rasmi majburiy. Shu rasm unique ID bilan Face ID ga yoziladi —
+            boshqa haydovchi bilan chalkashmaydi.
           </p>
 
           <div className="space-y-2">
             <Label htmlFor="fullName">To&apos;liq ism</Label>
-            <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            <Input
+              id="fullName"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone">Telefon raqami</Label>
@@ -148,9 +171,6 @@ export function DriverForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Agar kiritilsa, haydovchi shu parol bilan ilovaga kira oladi.
-            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -178,13 +198,12 @@ export function DriverForm() {
       {devices.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Qurilmalarga avtomatik yuklash (ixtiyoriy)</CardTitle>
+            <CardTitle className="text-base">Qurilmalarga avtomatik yuklash</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Tanlangan qurilma(lar)ga rasm avtomatik yuklanadi — to&apos;g&apos;ridan-to&apos;g&apos;ri
-              yoki qurilmadagi relay agent orqali. Boshqa qurilmalarga ulash uchun
-              haydovchi sahifasidan &quot;Ulash rejimi&quot;dan foydalaning.
+              Tanlangan qurilmalarga rasm unique Person ID bilan yuboriladi (relay agent
+              orqali). Bu asosiy va xavfsiz yo&apos;l — Ulash rejimi faqat zaxira.
             </p>
             {devices.map((device) => (
               <label
@@ -198,7 +217,9 @@ export function DriverForm() {
                 <span className="flex-1">
                   {device.name}
                   <span className="block text-xs text-muted-foreground">
-                    {device.ipAddress ?? "Relay agent orqali"}
+                    {device.hasAgent
+                      ? "Relay agent orqali (tavsiya)"
+                      : (device.ipAddress ?? "ISAPI")}
                   </span>
                 </span>
               </label>

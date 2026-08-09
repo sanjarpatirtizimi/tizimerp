@@ -141,9 +141,13 @@ export function DevicePairingPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Qurilmalarga ulash</CardTitle>
+        <CardTitle className="text-base">Zaxira: Ulash rejimi</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Faqat agent/ISAPI ishlamagan qurilmalar uchun. Asosiy yo&apos;l —
+          yuqoridagi &quot;Avtomatik yuz yuklash&quot;.
+        </p>
         {linked.length > 0 && (
           <ul className="space-y-2">
             {linked.map((reg) => (

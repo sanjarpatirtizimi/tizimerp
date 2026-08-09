@@ -70,13 +70,25 @@ export class HikvisionService {
       },
     };
 
-    const response = await client.put(
+    // Prefer Record (create). If the person already exists on the device,
+    // fall back to Modify so re-enrollment is idempotent.
+    let response = await client.put(
       '/ISAPI/AccessControl/UserInfo/Record?format=json',
       {
         data: body,
         headers: { 'Content-Type': 'application/json' },
       },
     );
+
+    if (response.status >= 400) {
+      response = await client.put(
+        '/ISAPI/AccessControl/UserInfo/Modify?format=json',
+        {
+          data: body,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
 
     if (response.status >= 400) {
       this.logger.error(

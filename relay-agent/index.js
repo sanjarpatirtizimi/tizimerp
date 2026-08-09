@@ -11,16 +11,25 @@ const {
   DEVICE_PORT = "80",
   DEVICE_USERNAME,
   DEVICE_PASSWORD,
-  POLL_INTERVAL_MS = "1500",
+  POLL_INTERVAL_MS = "1000",
 } = process.env;
 
 function assertConfig() {
-  const required = { API_BASE_URL, DEVICE_ID, AGENT_KEY, DEVICE_IP, DEVICE_USERNAME, DEVICE_PASSWORD };
+  const required = {
+    API_BASE_URL,
+    DEVICE_ID,
+    AGENT_KEY,
+    DEVICE_IP,
+    DEVICE_USERNAME,
+    DEVICE_PASSWORD,
+  };
   const missing = Object.entries(required)
     .filter(([, value]) => !value)
     .map(([key]) => key);
   if (missing.length > 0) {
-    console.error(`.env faylida quyidagi qiymatlar to'ldirilmagan: ${missing.join(", ")}`);
+    console.error(
+      `.env faylida quyidagi qiymatlar to'ldirilmagan: ${missing.join(", ")}`,
+    );
     process.exit(1);
   }
 }
@@ -40,7 +49,7 @@ async function main() {
   const api = axios.create({
     baseURL: API_BASE_URL,
     headers: { Authorization: `Bearer ${AGENT_KEY}` },
-    timeout: 15000,
+    timeout: 20000,
   });
   const deviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
@@ -52,6 +61,7 @@ async function main() {
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma: ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Tekshirish oralig'i: ${POLL_INTERVAL_MS} ms`);
+  log("Person ID = platformadagi haydovchi ID (unique, chalkashmaydi).");
   console.log("");
 
   // eslint-disable-next-line no-constant-condition
@@ -64,7 +74,7 @@ async function main() {
         : error.message;
       log(`Serverdan so'rov xatosi: ${message}`);
     }
-    await sleep(Number(POLL_INTERVAL_MS));
+    await sleep(Number(POLL_INTERVAL_MS) || 1000);
   }
 }
 
@@ -75,70 +85,96 @@ async function pollOnce(api, deviceClient, backendOrigin) {
   log(`${jobs.length} ta yangi haydovchi topildi.`);
 
   for (const job of jobs) {
+    const employeeNo = job.employeeNo || job.driverId;
     try {
+      if (!employeeNo) throw new Error("employeeNo/driverId yo'q");
       if (!job.photoUrl) throw new Error("Haydovchida rasm yo'q");
 
       const photoResponse = await axios.get(`${backendOrigin}${job.photoUrl}`, {
         responseType: "arraybuffer",
+        timeout: 30000,
       });
       const photoBuffer = Buffer.from(photoResponse.data);
+      if (photoBuffer.length < 100) {
+        throw new Error("Rasm fayli bo'sh yoki juda kichik");
+      }
 
-      await enrollOnDevice(deviceClient, job.driverId, job.fullName, photoBuffer);
+      await enrollOnDevice(deviceClient, employeeNo, job.fullName, photoBuffer);
 
       await api.post(`/agent/${DEVICE_ID}/pending/${job.registrationId}/ack`, {
         success: true,
-        hikvisionFaceId: job.driverId,
+        hikvisionFaceId: employeeNo,
       });
-      log(`  \u2714 ${job.fullName} qurilmaga muvaffaqiyatli yozildi.`);
+      log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
     } catch (error) {
       const message = error.response
         ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
         : error.message;
-      log(`  \u2718 ${job.fullName}: ${message}`);
+      log(`  ✗ ${job.fullName}: ${message}`);
       await api
         .post(`/agent/${DEVICE_ID}/pending/${job.registrationId}/ack`, {
           success: false,
-          error: message,
+          error: message.slice(0, 500),
         })
         .catch(() => undefined);
     }
   }
 }
 
-/** Same two-step ISAPI flow as the backend's `HikvisionService.enrollDriver`. */
-async function enrollOnDevice(deviceClient, driverId, fullName, photoBuffer) {
-  const userInfoResponse = await deviceClient.put(
+/**
+ * Same two-step ISAPI flow as backend HikvisionService.enrollDriver.
+ * employeeNo MUST be the platform driver.id — never a local "1"/"2".
+ */
+async function enrollOnDevice(deviceClient, employeeNo, fullName, photoBuffer) {
+  const userBody = {
+    UserInfo: {
+      employeeNo,
+      name: fullName,
+      userType: "normal",
+      Valid: {
+        enable: true,
+        beginTime: "2020-01-01T00:00:00",
+        endTime: "2037-12-31T23:59:59",
+        timeType: "local",
+      },
+    },
+  };
+
+  let userInfoResponse = await deviceClient.put(
     "/ISAPI/AccessControl/UserInfo/Record?format=json",
     {
-      data: {
-        UserInfo: {
-          employeeNo: driverId,
-          name: fullName,
-          userType: "normal",
-          Valid: {
-            enable: true,
-            beginTime: "2020-01-01T00:00:00",
-            endTime: "2037-12-31T23:59:59",
-            timeType: "local",
-          },
-        },
-      },
+      data: userBody,
       headers: { "Content-Type": "application/json" },
     },
   );
+
+  // Person already exists → update instead of failing the whole job.
+  if (userInfoResponse.status >= 400) {
+    userInfoResponse = await deviceClient.put(
+      "/ISAPI/AccessControl/UserInfo/Modify?format=json",
+      {
+        data: userBody,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+
   if (userInfoResponse.status >= 400) {
     throw new Error(
-      `UserInfo/Record: HTTP ${userInfoResponse.status} ${JSON.stringify(userInfoResponse.data)}`,
+      `UserInfo: HTTP ${userInfoResponse.status} ${JSON.stringify(userInfoResponse.data)}`,
     );
   }
 
   const form = new FormData();
   form.append(
     "FaceDataRecord",
-    JSON.stringify({ faceLibType: "blackFD", FDID: "1", FPID: driverId }),
+    JSON.stringify({ faceLibType: "blackFD", FDID: "1", FPID: employeeNo }),
     { contentType: "application/json" },
   );
-  form.append("img", photoBuffer, { filename: "face.jpg", contentType: "image/jpeg" });
+  form.append("img", photoBuffer, {
+    filename: "face.jpg",
+    contentType: "image/jpeg",
+  });
 
   const faceResponse = await deviceClient.post(
     "/ISAPI/Intelligent/FDLib/FDSetUp?format=json",

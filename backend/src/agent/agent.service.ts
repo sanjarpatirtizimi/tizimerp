@@ -5,9 +5,12 @@ import { AckEnrollmentDto } from './dto/ack-enrollment.dto';
 
 export interface PendingEnrollmentJob {
   registrationId: string;
+  /** Platform driver id — MUST be used as Hikvision employeeNo / FPID. */
   driverId: string;
+  /** Same as driverId; explicit for relay-agent clarity. */
+  employeeNo: string;
   fullName: string;
-  photoUrl: string | null;
+  photoUrl: string;
 }
 
 @Injectable()
@@ -15,9 +18,9 @@ export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Jobs waiting for this device's relay agent to push: drivers who were
-   * queued for enrollment (via driver creation, or a future re-queue
-   * action) but haven't been confirmed synced yet.
+   * Jobs waiting for this device's relay agent to push a face under
+   * employeeNo = driver.id. Ulash (pairing) rows are excluded — they set
+   * pairingExpiresAt and must never be treated as photo-push jobs.
    */
   async listPending(deviceId: string): Promise<PendingEnrollmentJob[]> {
     const registrations = await this.prisma.driverDeviceRegistration.findMany({
@@ -25,19 +28,28 @@ export class AgentService {
         deviceId,
         syncStatus: SyncStatus.PENDING,
         hikvisionFaceId: null,
+        pairingExpiresAt: null,
+        driver: {
+          status: { not: DriverStatus.BLOCKED },
+          photoUrl: { not: null },
+        },
       },
       include: { driver: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    return registrations
-      .filter((r) => r.driver.status !== DriverStatus.BLOCKED)
-      .map((r) => ({
+    const jobs: PendingEnrollmentJob[] = [];
+    for (const r of registrations) {
+      if (!r.driver.photoUrl) continue;
+      jobs.push({
         registrationId: r.id,
         driverId: r.driverId,
+        employeeNo: r.driverId,
         fullName: r.driver.fullName,
         photoUrl: r.driver.photoUrl,
-      }));
+      });
+    }
+    return jobs;
   }
 
   /** Relay reports the outcome of pushing one job to the physical device. */
@@ -54,13 +66,21 @@ export class AgentService {
     }
 
     if (dto.success) {
+      // Never trust a foreign Person ID from the agent — unique ID is always
+      // our driver.id so recognition can never mix two people up.
+      const personId = registration.driverId;
+      if (dto.hikvisionFaceId && dto.hikvisionFaceId !== personId) {
+        // Soft warning only: still force the correct id.
+      }
+
       await this.prisma.driverDeviceRegistration.update({
         where: { id: registrationId },
         data: {
-          hikvisionFaceId: dto.hikvisionFaceId ?? registration.driverId,
+          hikvisionFaceId: personId,
           syncStatus: SyncStatus.SYNCED,
           syncedAt: new Date(),
           syncError: null,
+          pairingExpiresAt: null,
         },
       });
 
