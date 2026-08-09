@@ -249,51 +249,41 @@ export class RecognitionService {
 
   /**
    * Looks for a `DriverDeviceRegistration` on this device that's currently
-   * "armed" (an operator clicked "Ulash" for a specific driver+device pair
-   * and is waiting for the driver to touch their face) and, if found,
-   * fills in the Person ID the device just reported — completing the
-   * pairing with zero manual data entry.
+   * "armed" (or within a short grace after expiry — webhooks often arrive
+   * a few seconds late over 4G) and fills in the Person ID the device
+   * just reported.
    *
-   * Safety check: Person IDs are NOT guaranteed to be globally unique
-   * across different physical terminals — many devices auto-assign local
-   * sequential IDs ("1", "2", ...) independently, so "1" on one gate can
-   * belong to a completely different person than "1" on another gate. If
-   * this Person ID is ALREADY confirmed for a *different* driver anywhere
-   * else in the system, we cannot safely assume it's the same physical
-   * person here. To avoid ever crediting a stamp to the wrong driver, we
-   * refuse the claim entirely: nobody is matched for this event, and the
-   * pending pairing window is left untouched so the real driver can still
-   * complete it before it expires. The operator can retry with a face
-   * that hasn't been used elsewhere, or investigate manually.
+   * Person IDs are local to each Hikvision terminal, so the conflict
+   * check is scoped to THIS device only: if another driver is already
+   * confirmed with the same Person ID on this device, refuse the claim.
    */
   private async claimPendingPairing(deviceId: string, employeeNo: string) {
+    // Accept pairings that expired up to 90s ago so late webhooks still
+    // complete Ulash instead of forcing a manual DB fix.
+    const graceCutoff = new Date(Date.now() - 90 * 1000);
     const pending = await this.prisma.driverDeviceRegistration.findFirst({
       where: {
         deviceId,
         hikvisionFaceId: null,
-        pairingExpiresAt: { gt: new Date() },
+        pairingExpiresAt: { gt: graceCutoff },
       },
       include: { driver: true },
     });
     if (!pending) return null;
 
-    const knownElsewhere = await this.prisma.driverDeviceRegistration.findFirst(
-      {
-        where: {
-          hikvisionFaceId: employeeNo,
-          syncStatus: SyncStatus.SYNCED,
-          NOT: { driverId: pending.driverId },
-        },
+    const takenOnDevice = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        deviceId,
+        hikvisionFaceId: employeeNo,
+        NOT: { driverId: pending.driverId },
       },
-    );
+    });
 
-    if (knownElsewhere) {
+    if (takenOnDevice) {
       this.logger.warn(
-        `[${deviceId}] Person ID "${employeeNo}" is already confirmed for a ` +
-          `different driver (${knownElsewhere.driverId}, on device ` +
-          `${knownElsewhere.deviceId}). Refusing to claim it for the pending ` +
-          `pairing of driver ${pending.driverId} — ambiguous Person ID, no ` +
-          `one will be matched for this event.`,
+        `[${deviceId}] Person ID "${employeeNo}" already belongs to driver ` +
+          `${takenOnDevice.driverId} on this device. Refusing claim for ` +
+          `pending pairing of driver ${pending.driverId}.`,
       );
       return null;
     }

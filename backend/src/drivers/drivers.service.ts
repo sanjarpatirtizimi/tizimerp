@@ -5,7 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DriverStatus, SyncStatus } from '@prisma/client';
+import {
+  DriverStatus,
+  RecognitionEventStatus,
+  SyncStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -17,6 +21,8 @@ import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'drivers');
 const PAIRING_WINDOW_MS = 3 * 60 * 1000;
+/** Look back for face touches that arrived just before the operator armed Ulash. */
+const PAIRING_LOOKBACK_MS = 3 * 60 * 1000;
 
 @Injectable()
 export class DriversService {
@@ -311,15 +317,107 @@ export class DriversService {
       },
     });
 
+    // If the driver already touched the device a moment ago (common when the
+    // operator starts Ulash after the face beep), complete pairing immediately
+    // from that recent unmatched recognition — no second touch needed.
+    const claimed = await this.claimPairingFromRecentEvents(driverId, deviceId);
+
     await this.auditService.log({
       userId: operatorId,
-      action: 'DRIVER_DEVICE_PAIRING_STARTED',
+      action: claimed
+        ? 'DRIVER_DEVICE_PAIRING_AUTO_CLAIMED'
+        : 'DRIVER_DEVICE_PAIRING_STARTED',
       entityType: 'Driver',
       entityId: driverId,
-      metadata: { deviceId },
+      metadata: {
+        deviceId,
+        ...(claimed ? { hikvisionFaceId: claimed } : {}),
+      },
     });
 
-    return { deviceId, pairingExpiresAt };
+    if (claimed) {
+      return {
+        deviceId,
+        pairingExpiresAt: null as Date | null,
+        paired: true as const,
+        hikvisionFaceId: claimed,
+      };
+    }
+
+    return {
+      deviceId,
+      pairingExpiresAt,
+      paired: false as const,
+      hikvisionFaceId: null as string | null,
+    };
+  }
+
+  /**
+   * Completes an armed pairing from a recent UNMATCHED recognition on the
+   * same device. Only auto-claims when exactly one distinct Person ID
+   * appeared in the lookback window (avoids binding the wrong face when
+   * several people walked past).
+   */
+  private async claimPairingFromRecentEvents(
+    driverId: string,
+    deviceId: string,
+  ): Promise<string | null> {
+    const since = new Date(Date.now() - PAIRING_LOOKBACK_MS);
+    const recent = await this.prisma.recognitionEvent.findMany({
+      where: {
+        deviceId,
+        status: RecognitionEventStatus.UNMATCHED,
+        employeeNoRaw: { not: null },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { employeeNoRaw: true },
+    });
+
+    const personIds = [
+      ...new Set(
+        recent
+          .map((e) => e.employeeNoRaw)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (personIds.length !== 1) return null;
+
+    const employeeNo = personIds[0];
+
+    const takenOnDevice = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        deviceId,
+        hikvisionFaceId: employeeNo,
+        NOT: { driverId },
+      },
+    });
+    if (takenOnDevice) return null;
+
+    await this.prisma.driverDeviceRegistration.update({
+      where: { driverId_deviceId: { driverId, deviceId } },
+      data: {
+        hikvisionFaceId: employeeNo,
+        syncStatus: SyncStatus.SYNCED,
+        syncedAt: new Date(),
+        pairingExpiresAt: null,
+        syncError: null,
+      },
+    });
+
+    const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
+    if (driver?.status === DriverStatus.PENDING) {
+      await this.prisma.driver.update({
+        where: { id: driverId },
+        data: { status: DriverStatus.ACTIVE },
+      });
+    }
+
+    this.logger.log(
+      `[${deviceId}] pairing auto-claimed from recent event: driver ${driverId} <- Person ID "${employeeNo}"`,
+    );
+    return employeeNo;
   }
 
   /** Cancels an armed-but-unconfirmed pairing window before it expires on its own. */

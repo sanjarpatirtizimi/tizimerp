@@ -61,9 +61,12 @@ export const driversApi = {
 
   startDevicePairing: (id: string, deviceId: string) =>
     apiClient
-      .post<{ deviceId: string; pairingExpiresAt: string }>(
-        `/drivers/${id}/devices/${deviceId}/pairing`,
-      )
+      .post<{
+        deviceId: string;
+        pairingExpiresAt: string | null;
+        paired: boolean;
+        hikvisionFaceId: string | null;
+      }>(`/drivers/${id}/devices/${deviceId}/pairing`)
       .then((r) => r.data),
 
   cancelDevicePairing: (id: string, deviceId: string) =>

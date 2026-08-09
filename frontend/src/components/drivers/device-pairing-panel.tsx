@@ -29,8 +29,9 @@ function msToClock(ms: number): string {
 /**
  * "Ulash rejimi" — a driver can be linked to several devices (e.g. one gate
  * on the way out, another on the way back). Operator explicitly picks ONE
- * not-yet-linked device and arms a 2-minute window; the next unrecognized
- * face touch on THAT device auto-completes the link. Repeat for each
+ * not-yet-linked device and arms a 3-minute window; the next unrecognized
+ * face touch on THAT device auto-completes the link. A face touch from the
+ * previous few minutes is also accepted when Ulash starts. Repeat for each
  * additional device the driver needs.
  */
 export function DevicePairingPanel({
@@ -96,9 +97,15 @@ export function DevicePairingPanel({
     }
     setIsStarting(true);
     try {
-      await driversApi.startDevicePairing(driver.id, selectedDeviceId);
+      const result = await driversApi.startDevicePairing(
+        driver.id,
+        selectedDeviceId,
+      );
       setSelectedDeviceId("");
       await onChanged();
+      if (result.paired) {
+        toast.success("Qurilma ulandi (oldingi yuz tutishdan)");
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Ulash rejimini boshlab bo'lmadi"));
     } finally {
