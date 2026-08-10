@@ -1,7 +1,20 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { Car, Loader2, Phone } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Car, Loader2, Phone, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +30,7 @@ import { DriverPhotoButton } from "@/components/drivers/driver-photo-button";
 import { EditDriverDialog } from "@/components/drivers/edit-driver-dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
+import { getApiErrorMessage } from "@/lib/api-client";
 import { driversApi } from "@/lib/api/drivers";
 import { driverStatusLabels } from "@/lib/format";
 import type { Driver, DriverStatus } from "@/lib/types";
@@ -30,11 +44,14 @@ const statusStyles: Record<DriverStatus, string> = {
 
 export default function DriverDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { claims } = useAuth();
   const isSuperAdmin = claims?.kind === "staff" && claims.role === "SUPER_ADMIN";
+  const isStaff = claims?.kind === "staff";
 
   const [driver, setDriver] = useState<Driver | null>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { summary, transactions, isLoading, isLoadingMore, hasMore, loadMore, refresh } =
     useWallet(id);
 
@@ -59,6 +76,20 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
       setDriver((prev) => (prev ? { ...prev, status: updated.status } : prev));
     } finally {
       setIsStatusUpdating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!driver) return;
+    setIsDeleting(true);
+    try {
+      await driversApi.remove(id);
+      toast.success("Haydovchi o'chirildi");
+      router.push("/staff/dashboard");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Haydovchini o'chirib bo'lmadi"));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -122,7 +153,7 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
       {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
 
       {isSuperAdmin && driver && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <ManualAdjustmentDialog driverId={id} onSuccess={refresh} />
           <Button
             variant="ghost"
@@ -135,6 +166,44 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
             {driver.status === "BLOCKED" ? "Blokdan chiqarish" : "Haydovchini bloklash"}
           </Button>
         </div>
+      )}
+
+      {isStaff && driver && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              Haydovchini o&apos;chirish
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Haydovchini o&apos;chirish?</AlertDialogTitle>
+              <AlertDialogDescription>
+                &quot;{driver.fullName}&quot; ro&apos;yxatdan olib tashlanadi va tizimga
+                kira olmaydi. Balans/tranzaksiya tarixi saqlanadi. Telefon raqami
+                keyin qayta ishlatilishi mumkin.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-white hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDelete();
+                }}
+                disabled={isDeleting}
+              >
+                O&apos;chirish
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       <Card>
