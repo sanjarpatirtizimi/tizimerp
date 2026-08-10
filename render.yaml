@@ -25,7 +25,7 @@ services:
       - key: JWT_REFRESH_EXPIRES_IN
         value: 30d
       - key: STAMP_AMOUNT_UZS
-        value: "40000"
+        value: "30000"
       - key: RECOGNITION_COOLDOWN_MINUTES
         value: "60"
       - key: DEVICE_CREDENTIALS_ENC_KEY

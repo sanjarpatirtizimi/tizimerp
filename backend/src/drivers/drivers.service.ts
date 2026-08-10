@@ -363,11 +363,14 @@ export class DriversService {
         hikvisionFaceId: dto.hikvisionFaceId,
         syncStatus: SyncStatus.SYNCED,
         syncedAt: new Date(),
+        pairingExpiresAt: null,
+        syncError: null,
       },
       update: {
         hikvisionFaceId: dto.hikvisionFaceId,
         syncStatus: SyncStatus.SYNCED,
         syncedAt: new Date(),
+        pairingExpiresAt: null,
         syncError: null,
       },
     });

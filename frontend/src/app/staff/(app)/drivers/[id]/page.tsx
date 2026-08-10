@@ -146,11 +146,11 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
         <GoodsExchangeDialog driverId={id} onSuccess={refresh} />
       </div>
 
+      {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
+
       {driver && (
         <DeviceEnrollmentPanel driver={driver} onChanged={loadDriver} />
       )}
-
-      {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
 
       {isSuperAdmin && driver && (
         <div className="flex items-center justify-between gap-2">

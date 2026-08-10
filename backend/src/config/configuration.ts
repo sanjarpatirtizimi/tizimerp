@@ -26,7 +26,7 @@ export default (): { app: AppConfig } => ({
       refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
     },
     business: {
-      stampAmountUzs: parseInt(process.env.STAMP_AMOUNT_UZS ?? '40000', 10),
+      stampAmountUzs: parseInt(process.env.STAMP_AMOUNT_UZS ?? '30000', 10),
       recognitionCooldownMinutes: parseInt(
         process.env.RECOGNITION_COOLDOWN_MINUTES ?? '60',
         10,

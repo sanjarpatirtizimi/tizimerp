@@ -120,7 +120,7 @@ export function DeviceEnrollmentPanel({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">Avtomatik yuz yuklash</CardTitle>
+        <CardTitle className="text-base">Ixtiyoriy: avtomatik yuz yuklash</CardTitle>
         {pendingOrFailed.length > 0 && (
           <Button
             size="sm"
@@ -136,8 +136,9 @@ export function DeviceEnrollmentPanel({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Har bir haydovchiga unique Person ID beriladi (chalkashmaydi). Relay agent
-          rasmni qurilmaga 1–2 soniyada yuboradi.
+          Relay agent orqali avtomatik yuborish (ixtiyoriy). Asosiy yo&apos;l —
+          yuqoridagi &quot;Qurilma ulash&quot;: Face IDda qo&apos;shib, Person ID ni
+          saqlang.
         </p>
 
         {enrollmentRegs.length === 0 ? (

@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Link2, Loader2, ScanFace, Unlink, X } from "lucide-react";
+import { Link2, Loader2, ScanFace, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -17,22 +18,10 @@ import { devicesApi } from "@/lib/api/devices";
 import { driversApi } from "@/lib/api/drivers";
 import type { Device, Driver } from "@/lib/types";
 
-const POLL_MS = 3000;
-
-function msToClock(ms: number): string {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
 /**
- * "Ulash rejimi" — a driver can be linked to several devices (e.g. one gate
- * on the way out, another on the way back). Operator explicitly picks ONE
- * not-yet-linked device and arms a 3-minute window; the next unrecognized
- * face touch on THAT device auto-completes the link. A face touch from the
- * previous few minutes is also accepted when Ulash starts. Repeat for each
- * additional device the driver needs.
+ * Manual device linking: operator enrolls the face on the Face ID terminal
+ * themselves, then records which device + Person ID belongs to this driver.
+ * Recognition webhooks then match employeeNo → hikvisionFaceId → stamp.
  */
 export function DevicePairingPanel({
   driver,
@@ -43,10 +32,9 @@ export function DevicePairingPanel({
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
-  const [isStarting, setIsStarting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const [personId, setPersonId] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const [isUnlinking, setIsUnlinking] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     devicesApi.list().then(setDevices).catch(() => setDevices([]));
@@ -54,74 +42,37 @@ export function DevicePairingPanel({
 
   const registrations = driver.deviceRegistrations ?? [];
   const linked = registrations.filter((r) => r.hikvisionFaceId);
-  const pending = registrations.find(
-    (r) => !r.hikvisionFaceId && r.pairingExpiresAt && new Date(r.pairingExpiresAt).getTime() > now,
-  );
-  // A device is "taken" (hidden from the picker) while confirmed OR while a
-  // pairing window for it is still counting down. Once a window expires
-  // without a face touch, its device becomes selectable again.
-  const takenDeviceIds = new Set(
-    registrations
-      .filter(
-        (r) =>
-          r.hikvisionFaceId ||
-          (r.pairingExpiresAt && new Date(r.pairingExpiresAt).getTime() > now),
-      )
-      .map((r) => r.deviceId),
+  const linkedDeviceIds = useMemo(
+    () => new Set(linked.map((r) => r.deviceId)),
+    [linked],
   );
   const availableDevices = useMemo(
-    () => devices.filter((d) => !takenDeviceIds.has(d.id)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [devices, registrations, now],
+    () => devices.filter((d) => !linkedDeviceIds.has(d.id)),
+    [devices, linkedDeviceIds],
   );
 
-  // Tick the countdown, and poll the driver for confirmation while a
-  // pairing window is armed.
-  useEffect(() => {
-    if (!pending) return;
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    const poll = setInterval(() => {
-      onChanged();
-    }, POLL_MS);
-    return () => {
-      clearInterval(tick);
-      clearInterval(poll);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending?.deviceId, pending?.pairingExpiresAt]);
-
-  async function handleStart() {
+  async function handleSave() {
     if (!selectedDeviceId) {
-      toast.error("Avval qurilmani tanlang");
+      toast.error("Qurilmani tanlang");
       return;
     }
-    setIsStarting(true);
-    try {
-      const result = await driversApi.startDevicePairing(
-        driver.id,
-        selectedDeviceId,
-      );
-      setSelectedDeviceId("");
-      await onChanged();
-      if (result.paired) {
-        toast.success("Qurilma ulandi (oldingi yuz tutishdan)");
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Ulash rejimini boshlab bo'lmadi"));
-    } finally {
-      setIsStarting(false);
+    const faceId = personId.trim();
+    if (!faceId) {
+      toast.error("Face ID dagi Person ID ni yozing (masalan: 1, 2, 15)");
+      return;
     }
-  }
 
-  async function handleCancel(deviceId: string) {
-    setIsCancelling(true);
+    setIsSaving(true);
     try {
-      await driversApi.cancelDevicePairing(driver.id, deviceId);
+      await driversApi.setManualFaceMapping(driver.id, selectedDeviceId, faceId);
+      toast.success("Qurilma saqlandi — endi pechat yoziladi");
+      setSelectedDeviceId("");
+      setPersonId("");
       await onChanged();
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Bekor qilib bo'lmadi"));
+      toast.error(getApiErrorMessage(error, "Saqlab bo'lmadi"));
     } finally {
-      setIsCancelling(false);
+      setIsSaving(false);
     }
   }
 
@@ -141,15 +92,15 @@ export function DevicePairingPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Zaxira: Ulash rejimi</CardTitle>
+        <CardTitle className="text-base">Qurilma ulash</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Faqat agent/ISAPI ishlamagan qurilmalar uchun. Asosiy yo&apos;l —
-          yuqoridagi &quot;Avtomatik yuz yuklash&quot;. Avval &quot;Boshlash&quot;,
-          keyin shu haydovchi qurilmaga qarasin — oldindan qaragan yuz
-          avtomatik bog&apos;lanmaydi.
+          1) Face ID qurilmasida haydovchini qo&apos;shing va Person ID ni eslab
+          qoling. 2) Pastda shu qurilmani tanlang, Person ID ni yozing va
+          saqlang. Shundan keyin qarasa pechat yoziladi.
         </p>
+
         {linked.length > 0 && (
           <ul className="space-y-2">
             {linked.map((reg) => (
@@ -158,7 +109,12 @@ export function DevicePairingPanel({
                 className="flex items-center gap-2 rounded-md border p-2.5 text-sm"
               >
                 <ScanFace className="size-4 shrink-0 text-success" />
-                <span className="min-w-0 flex-1 truncate">{reg.device.name}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{reg.device.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Person ID: {reg.hikvisionFaceId}
+                  </p>
+                </div>
                 <span className="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                   Ulangan
                 </span>
@@ -181,55 +137,43 @@ export function DevicePairingPanel({
           </ul>
         )}
 
-        {pending ? (
-          <div className="flex items-center gap-3 rounded-md border border-dashed p-3 text-sm">
-            <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">
-                {devices.find((d) => d.id === pending.deviceId)?.name ?? pending.deviceId}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Boshlashdan keyin haydovchi yuzini shu qurilmaga tutishini
-                kutmoqda —{" "}
-                {msToClock(new Date(pending.pairingExpiresAt!).getTime() - now)}
-              </p>
-            </div>
+        {availableDevices.length > 0 ? (
+          <div className="space-y-2 rounded-md border p-3">
+            <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Qurilmani tanlang" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableDevices.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={personId}
+              onChange={(e) => setPersonId(e.target.value)}
+              placeholder="Face ID Person ID (masalan: 1)"
+              inputMode="text"
+            />
             <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={isCancelling}
-              onClick={() => handleCancel(pending.deviceId)}
-              aria-label="Bekor qilish"
+              className="w-full gap-1"
+              onClick={handleSave}
+              disabled={isSaving}
             >
-              <X className="size-4" />
+              {isSaving ? <Loader2 className="animate-spin" /> : <Link2 className="size-4" />}
+              Saqlash
             </Button>
           </div>
-        ) : (
-          availableDevices.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Yangi qurilmani tanlang" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDevices.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button size="sm" onClick={handleStart} disabled={isStarting} className="shrink-0 gap-1">
-                {isStarting ? <Loader2 className="animate-spin" /> : <Link2 className="size-4" />}
-                Boshlash
-              </Button>
-            </div>
-          )
-        )}
-
-        {!pending && linked.length === 0 && availableDevices.length === 0 && (
+        ) : devices.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Hozircha hech qanday qurilma tizimga signal yubormagan.
+            Hozircha qurilma yo&apos;q. Avval Face ID signal yuborsin yoki
+            Qurilmalar sahifasidan qo&apos;shing.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Barcha mavjud qurilmalar allaqachon ulangan.
           </p>
         )}
       </CardContent>
