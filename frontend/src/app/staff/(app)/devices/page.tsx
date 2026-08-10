@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Pencil, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
 import { RequireStaff } from "@/components/auth/route-guard";
+import { useAuth } from "@/lib/auth-context";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,13 +37,15 @@ const statusStyles: Record<DeviceStatus, string> = {
 
 export default function DevicesPage() {
   return (
-    <RequireStaff roles={["SUPER_ADMIN"]}>
+    <RequireStaff roles={["SUPER_ADMIN", "OPERATOR"]}>
       <DevicesPageContent />
     </RequireStaff>
   );
 }
 
 function DevicesPageContent() {
+  const { claims } = useAuth();
+  const isSuperAdmin = claims?.kind === "staff" && claims.role === "SUPER_ADMIN";
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [pingingId, setPingingId] = useState<string | null>(null);
@@ -86,15 +89,17 @@ function DevicesPageContent() {
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Qurilmalar</h1>
-        <DeviceFormDialog
-          onSuccess={loadDevices}
-          trigger={
-            <Button size="sm">
-              <Plus />
-              Qurilma qo&apos;shish
-            </Button>
-          }
-        />
+        {isSuperAdmin && (
+          <DeviceFormDialog
+            onSuccess={loadDevices}
+            trigger={
+              <Button size="sm">
+                <Plus />
+                Qurilma qo&apos;shish
+              </Button>
+            }
+          />
+        )}
       </div>
 
       {isLoading ? (
@@ -154,51 +159,55 @@ function DevicesPageContent() {
                     </Button>
                   )}
                   <AgentKeyDialog device={device} onIssued={loadDevices} />
-                  <DeviceFormDialog
-                    device={device}
-                    onSuccess={loadDevices}
-                    trigger={
-                      <Button variant="ghost" size="icon-sm" aria-label="Tahrirlash">
-                        <Pencil />
-                      </Button>
-                    }
-                  />
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-destructive hover:text-destructive"
-                        disabled={deletingId === device.id}
-                        aria-label="O'chirish"
-                      >
-                        {deletingId === device.id ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Trash2 />
-                        )}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Qurilmani o&apos;chirish?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          &quot;{device.name}&quot; qurilmasi butunlay o&apos;chiriladi. Agar bu
-                          qurilmada tanish tarixi (recognition events) yoki tranzaksiyalar
-                          mavjud bo&apos;lsa, o&apos;chirish rad etiladi.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => handleDelete(device.id)}
-                        >
-                          O&apos;chirish
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                  {isSuperAdmin && (
+                    <>
+                      <DeviceFormDialog
+                        device={device}
+                        onSuccess={loadDevices}
+                        trigger={
+                          <Button variant="ghost" size="icon-sm" aria-label="Tahrirlash">
+                            <Pencil />
+                          </Button>
+                        }
+                      />
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={deletingId === device.id}
+                            aria-label="O'chirish"
+                          >
+                            {deletingId === device.id ? (
+                              <Loader2 className="animate-spin" />
+                            ) : (
+                              <Trash2 />
+                            )}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Qurilmani o&apos;chirish?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              &quot;{device.name}&quot; qurilmasi butunlay o&apos;chiriladi. Agar bu
+                              qurilmada tanish tarixi (recognition events) yoki tranzaksiyalar
+                              mavjud bo&apos;lsa, o&apos;chirish rad etiladi.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDelete(device.id)}
+                            >
+                              O&apos;chirish
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </li>

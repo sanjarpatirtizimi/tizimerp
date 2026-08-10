@@ -28,10 +28,10 @@ import { cn } from "@/lib/utils";
 const primaryNav = [
   { href: "/staff/dashboard", label: "Bosh sahifa", icon: LayoutDashboard },
   { href: "/staff/drivers/new", label: "Ro'yxatga olish", icon: Users },
+  { href: "/staff/devices", label: "Qurilmalar", icon: Server },
 ];
 
-const adminNav = [
-  { href: "/staff/devices", label: "Qurilmalar", icon: Server },
+const superAdminNav = [
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/users", label: "Operatorlar", icon: UserCog },
 ];
@@ -73,7 +73,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                 <SheetTitle>Menyu</SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col gap-1 px-2">
-                {[...primaryNav, ...(isSuperAdmin ? adminNav : [])].map((item) => (
+                {[...primaryNav, ...(isSuperAdmin ? superAdminNav : [])].map((item) => (
                   <SheetClose asChild key={item.href}>
                     <Link
                       href={item.href}

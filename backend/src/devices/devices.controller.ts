@@ -53,7 +53,7 @@ export class DevicesController {
   }
 
   @Post(':id/ping')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
   checkHealth(@Param('id') id: string) {
     return this.devicesService.checkHealth(id);
   }
@@ -62,15 +62,17 @@ export class DevicesController {
    * Issues a fresh API key for this device's local relay agent (see
    * `AgentModule`). Returned exactly once — copy it into the agent's config
    * immediately, it cannot be retrieved again afterwards.
+   * Operators need this so field staff can set up the relay agent without
+   * SuperAdmin credentials.
    */
   @Post(':id/agent-key')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
   generateAgentKey(@Param('id') id: string) {
     return this.devicesService.generateAgentKey(id);
   }
 
   @Delete(':id/agent-key')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   revokeAgentKey(@Param('id') id: string) {
     return this.devicesService.revokeAgentKey(id);

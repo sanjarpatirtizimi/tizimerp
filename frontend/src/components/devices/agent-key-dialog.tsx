@@ -73,9 +73,8 @@ export function AgentKeyDialog({
         <DialogHeader>
           <DialogTitle>Relay agent kaliti — {device.name}</DialogTitle>
           <DialogDescription>
-            Planshet (yoki shu qurilma bilan bir tarmoqdagi kompyuter)dagi relay dasturi
-            shu kalit orqali serverga ulanadi va yangi haydovchilarni avtomatik
-            qurilmaga yozadi.
+            Planshet yoki telefon (Face ID bilan bir Wi‑Fi)dagi relay dasturi shu
+            kalit orqali serverga ulanadi. Oddiy operator ham kalit yarata oladi.
           </DialogDescription>
         </DialogHeader>
 
