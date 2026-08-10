@@ -597,15 +597,18 @@ export class DriversService {
 
   async findAll(status?: DriverStatus) {
     const drivers = await this.prisma.driver.findMany({
-      where: status ? { status } : undefined,
+      where: {
+        deletedAt: null,
+        ...(status ? { status } : {}),
+      },
       orderBy: { createdAt: 'desc' },
     });
     return drivers.map((d) => this.sanitizeDriver(d));
   }
 
   async findOne(id: string) {
-    const driver = await this.prisma.driver.findUnique({
-      where: { id },
+    const driver = await this.prisma.driver.findFirst({
+      where: { id, deletedAt: null },
       include: { deviceRegistrations: { include: { device: true } } },
     });
     if (!driver) throw new NotFoundException('Driver not found');
@@ -686,9 +689,75 @@ export class DriversService {
     return this.sanitizeDriver(driver);
   }
 
-  async getProfile(driverId: string) {
+  /**
+   * Soft-delete a driver. Ledger (transactions) and recognition history are
+   * kept for audit. Phone is freed for reuse; sessions and device links go.
+   */
+  async softDelete(id: string, operatorId: string) {
     const driver = await this.prisma.driver.findUnique({
-      where: { id: driverId },
+      where: { id },
+      include: {
+        deviceRegistrations: { include: { device: true } },
+      },
+    });
+    if (!driver || driver.deletedAt) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    for (const registration of driver.deviceRegistrations) {
+      const device = registration.device;
+      if (
+        registration.hikvisionFaceId &&
+        device.ipAddress &&
+        device.username &&
+        device.passwordEnc
+      ) {
+        try {
+          await this.hikvisionService.removeDriver(device, driver.id);
+        } catch (error) {
+          this.logger.warn(
+            `Could not remove face for driver ${id} from device ${device.id}: ${(error as Error).message}`,
+          );
+        }
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.driverDeviceRegistration.deleteMany({ where: { driverId: id } });
+      await tx.refreshToken.deleteMany({ where: { driverId: id } });
+      await tx.otpCode.deleteMany({ where: { driverId: id } });
+      await tx.driver.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          status: DriverStatus.BLOCKED,
+          // Free the unique phone for a future re-registration.
+          phone: `deleted:${id}:${driver.phone}`,
+          passwordHash: null,
+          photoBytes: null,
+          photoUrl: null,
+          photoMimeType: null,
+        },
+      });
+    });
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_DELETED',
+      entityType: 'Driver',
+      entityId: id,
+      metadata: {
+        fullName: driver.fullName,
+        phone: driver.phone,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async getProfile(driverId: string) {
+    const driver = await this.prisma.driver.findFirst({
+      where: { id: driverId, deletedAt: null },
     });
     if (!driver) throw new NotFoundException('Driver not found');
     return this.sanitizeDriver(driver);

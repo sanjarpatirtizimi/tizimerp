@@ -107,6 +107,8 @@ model Driver {
   photoBytes    Bytes?
   photoMimeType String?       @default("image/jpeg")
   status        DriverStatus  @default(PENDING)
+  /// Soft-delete timestamp. Null = active record. Ledger rows are kept.
+  deletedAt     DateTime?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -118,6 +120,7 @@ model Driver {
 
   @@index([status])
   @@index([phone])
+  @@index([deletedAt])
   @@map("drivers")
 }
 

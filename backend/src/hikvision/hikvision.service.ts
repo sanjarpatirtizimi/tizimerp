@@ -67,12 +67,14 @@ export class HikvisionService {
           endTime: '2037-12-31T23:59:59',
           timeType: 'local',
         },
+        doorRight: '1',
+        RightPlan: [{ doorNo: 1, planTemplateNo: '1' }],
       },
     };
 
-    // Prefer Record (create). If the person already exists on the device,
-    // fall back to Modify so re-enrollment is idempotent.
-    let response = await client.put(
+    // Many terminals require POST for Record (PUT → methodNotAllowed).
+    // If the person already exists, fall back to Modify.
+    let response = await client.post(
       '/ISAPI/AccessControl/UserInfo/Record?format=json',
       {
         data: body,
@@ -80,7 +82,7 @@ export class HikvisionService {
       },
     );
 
-    if (response.status >= 400) {
+    if (this.isIsapiFailure(response)) {
       response = await client.put(
         '/ISAPI/AccessControl/UserInfo/Modify?format=json',
         {
@@ -90,7 +92,7 @@ export class HikvisionService {
       );
     }
 
-    if (response.status >= 400) {
+    if (this.isIsapiFailure(response)) {
       this.logger.error(
         `Failed to upsert person ${driverId} on device ${device.name}: ${response.status} ${JSON.stringify(response.data)}`,
       );
@@ -98,6 +100,15 @@ export class HikvisionService {
         `Hikvision device "${device.name}" rejected person enrollment (HTTP ${response.status})`,
       );
     }
+  }
+
+  private isIsapiFailure(response: {
+    status: number;
+    data: unknown;
+  }): boolean {
+    if (response.status >= 400) return true;
+    const data = response.data as { statusCode?: number } | null;
+    return Boolean(data?.statusCode && data.statusCode !== 1);
   }
 
   /**
@@ -112,26 +123,43 @@ export class HikvisionService {
   ): Promise<FaceEnrollmentResult> {
     const client = this.clientFor(device);
 
-    const form = new FormData();
-    form.append(
-      'FaceDataRecord',
-      JSON.stringify({ faceLibType: 'blackFD', FDID: '1', FPID: driverId }),
-      { contentType: 'application/json' },
-    );
-    form.append('img', photoBuffer, {
-      filename: photoFileName,
-      contentType: 'image/jpeg',
-    });
+    const buildForm = () => {
+      const form = new FormData();
+      form.append(
+        'FaceDataRecord',
+        JSON.stringify({ faceLibType: 'blackFD', FDID: '1', FPID: driverId }),
+        { contentType: 'application/json' },
+      );
+      form.append('FaceImage', photoBuffer, {
+        filename: photoFileName,
+        contentType: 'image/jpeg',
+      });
+      return form;
+    };
 
-    const response = await client.post(
-      '/ISAPI/Intelligent/FDLib/FDSetUp?format=json',
+    // Prefer FaceDataRecord POST. Some terminals reject POST FDSetUp
+    // (methodNotAllowed) and expect FaceImage (not img).
+    let form = buildForm();
+    let response = await client.post(
+      '/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json',
       {
         data: form,
         headers: form.getHeaders(),
       },
     );
 
-    if (response.status >= 400) {
+    if (this.isIsapiFailure(response)) {
+      form = buildForm();
+      response = await client.put(
+        '/ISAPI/Intelligent/FDLib/FDSetUp?format=json',
+        {
+          data: form,
+          headers: form.getHeaders(),
+        },
+      );
+    }
+
+    if (this.isIsapiFailure(response)) {
       this.logger.error(
         `Failed to upload face for driver ${driverId} on device ${device.name}: ${response.status} ${JSON.stringify(response.data)}`,
       );

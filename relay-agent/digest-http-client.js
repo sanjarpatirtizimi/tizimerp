@@ -1,11 +1,10 @@
 const axios = require("axios");
 const { createHash, randomBytes } = require("crypto");
+const { Readable } = require("stream");
 
 /**
  * Minimal HTTP Digest Authentication client for Hikvision ISAPI devices.
- * Plain-JS port of the backend's `DigestHttpClient` (same protocol logic),
- * kept dependency-free from the NestJS app so this agent can run standalone
- * anywhere Node.js runs (Windows tablet, mini PC, Raspberry Pi, etc).
+ * Buffers stream/FormData bodies so a 401 digest retry can resend the same bytes.
  */
 class DigestHttpClient {
   constructor(baseURL, username, password, timeoutMs = 10000) {
@@ -16,6 +15,36 @@ class DigestHttpClient {
     this.http = axios.create({
       baseURL,
       timeout: timeoutMs,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      // Keep binary multipart intact, but still JSON-stringify plain objects.
+      transformRequest: [
+        (data, headers) => {
+          if (data == null) return data;
+          if (Buffer.isBuffer(data)) return data;
+          if (typeof data === "string") return data;
+          if (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer) {
+            return data;
+          }
+          if (typeof data.pipe === "function") return data;
+          if (typeof data === "object") {
+            const contentType =
+              headers["Content-Type"] || headers["content-type"] || "";
+            if (
+              typeof contentType === "string" &&
+              contentType.includes("application/json")
+            ) {
+              return JSON.stringify(data);
+            }
+            // Default JSON for plain objects (UserInfo Record/Modify, etc).
+            if (!contentType) {
+              headers["Content-Type"] = "application/json";
+            }
+            return JSON.stringify(data);
+          }
+          return data;
+        },
+      ],
       validateStatus: () => true,
     });
   }
@@ -33,17 +62,22 @@ class DigestHttpClient {
   }
 
   async execute(method, url, body) {
+    const prepared = await this.prepareBody(body);
     const config = {
       method,
       url,
-      data: body.data,
-      headers: { ...body.headers },
+      data: prepared.data,
+      headers: { ...prepared.headers },
     };
 
     if (this.cachedChallenge) {
       config.headers = {
         ...config.headers,
-        Authorization: this.buildAuthorizationHeader(method, url, this.cachedChallenge),
+        Authorization: this.buildAuthorizationHeader(
+          method,
+          url,
+          this.cachedChallenge,
+        ),
       };
     }
 
@@ -53,14 +87,58 @@ class DigestHttpClient {
       const challenge = this.parseChallenge(response.headers["www-authenticate"]);
       if (!challenge) return response;
       this.cachedChallenge = challenge;
+      // Resend the SAME buffered bytes — critical for multipart face uploads.
       config.headers = {
-        ...body.headers,
+        ...prepared.headers,
         Authorization: this.buildAuthorizationHeader(method, url, challenge),
       };
+      config.data = prepared.data;
       response = await this.http.request(config);
     }
 
     return response;
+  }
+
+  async prepareBody(body) {
+    const headers = { ...(body.headers || {}) };
+    let data = body.data;
+
+    if (data == null) {
+      return { data, headers };
+    }
+
+    // form-data instances are readable streams — buffer them for digest retries.
+    if (typeof data.getBuffer === "function") {
+      data = await data.getBuffer();
+    } else if (typeof data.getLengthSync === "function" || this.looksLikeFormData(data)) {
+      data = await this.streamToBuffer(data);
+    } else if (Readable.isReadable(data) && typeof data.read === "function") {
+      data = await this.streamToBuffer(data);
+    }
+
+    if (Buffer.isBuffer(data) && headers["content-type"] && !headers["Content-Length"]) {
+      headers["Content-Length"] = String(data.length);
+    }
+
+    return { data, headers };
+  }
+
+  looksLikeFormData(data) {
+    return Boolean(
+      data &&
+        typeof data.pipe === "function" &&
+        typeof data.getHeaders === "function",
+    );
+  }
+
+  streamToBuffer(stream) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      stream.on("end", () => resolve(Buffer.concat(chunks)));
+      stream.on("error", reject);
+      if (typeof stream.resume === "function") stream.resume();
+    });
   }
 
   parseChallenge(header) {
@@ -88,11 +166,14 @@ class DigestHttpClient {
     const cnonce = randomBytes(8).toString("hex");
 
     const ha1 = this.md5(`${this.username}:${challenge.realm}:${this.password}`);
+    // Digest HA2 must use the request-URI as sent (path + query).
     const ha2 = this.md5(`${method}:${uri}`);
 
     let response;
     if (challenge.qop) {
-      response = this.md5(`${ha1}:${challenge.nonce}:${nc}:${cnonce}:${challenge.qop}:${ha2}`);
+      response = this.md5(
+        `${ha1}:${challenge.nonce}:${nc}:${cnonce}:${challenge.qop}:${ha2}`,
+      );
     } else {
       response = this.md5(`${ha1}:${challenge.nonce}:${ha2}`);
     }

@@ -105,4 +105,7 @@ export const driversApi = {
 
   unlinkDevice: (id: string, deviceId: string) =>
     apiClient.delete<Driver>(`/drivers/${id}/devices/${deviceId}`).then((r) => r.data),
+
+  remove: (id: string) =>
+    apiClient.delete<{ ok: boolean }>(`/drivers/${id}`).then((r) => r.data),
 };

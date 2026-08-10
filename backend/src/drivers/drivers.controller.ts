@@ -149,4 +149,13 @@ export class DriversController {
   ) {
     return this.driversService.update(id, dto, user.sub);
   }
+
+  @Delete(':id')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.softDelete(id, user.sub);
+  }
 }

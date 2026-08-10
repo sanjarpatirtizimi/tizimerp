@@ -65,6 +65,7 @@ export class AuthService {
     const driver = await this.prisma.driver.findUnique({ where: { phone } });
     if (
       !driver ||
+      driver.deletedAt ||
       !driver.passwordHash ||
       driver.status === DriverStatus.BLOCKED
     ) {
@@ -87,7 +88,7 @@ export class AuthService {
    */
   async requestDriverOtp(phone: string): Promise<{ message: string }> {
     const driver = await this.prisma.driver.findUnique({ where: { phone } });
-    if (!driver || driver.status === DriverStatus.BLOCKED) {
+    if (!driver || driver.deletedAt || driver.status === DriverStatus.BLOCKED) {
       // Do not leak whether the phone number exists.
       return { message: 'If this number is registered, an OTP has been sent.' };
     }
@@ -111,7 +112,7 @@ export class AuthService {
 
   async verifyDriverOtp(phone: string, code: string): Promise<TokenPair> {
     const driver = await this.prisma.driver.findUnique({ where: { phone } });
-    if (!driver || driver.status === DriverStatus.BLOCKED) {
+    if (!driver || driver.deletedAt || driver.status === DriverStatus.BLOCKED) {
       throw new UnauthorizedException('Invalid or expired code');
     }
 

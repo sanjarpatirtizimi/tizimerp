@@ -11,6 +11,7 @@ import {
   KeyRound,
   LogOut,
   Menu,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,7 @@ const primaryNav = [
 ];
 
 const superAdminNav = [
+  { href: "/staff/analytics", label: "Statistika", icon: BarChart3 },
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/users", label: "Operatorlar", icon: UserCog },
 ];
