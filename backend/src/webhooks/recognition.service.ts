@@ -106,10 +106,72 @@ export class RecognitionService {
       };
     }
 
-    const driver = await this.resolveDriverByEmployeeNo(
-      deviceId,
-      parsed.employeeNo,
-    );
+    return this.ingestFaceMatch(deviceId, {
+      employeeNo: parsed.employeeNo,
+      eventDateTime: parsed.eventDateTime,
+      capturedPhotoUrl,
+      rawPayload: parsed.raw,
+    });
+  }
+
+  /**
+   * Shared stamp pipeline for both cloud webhooks and the local relay-agent
+   * AcsEvent poller. Resolves Person ID → driver, applies cooldown, writes ledger.
+   */
+  async ingestFaceMatch(
+    deviceId: string,
+    input: {
+      employeeNo: string;
+      eventDateTime?: Date | null;
+      capturedPhotoUrl?: string;
+      rawPayload?: unknown;
+      dedupeKey?: string;
+    },
+  ): Promise<RecognitionOutcome> {
+    await this.prisma.device.upsert({
+      where: { id: deviceId },
+      create: {
+        id: deviceId,
+        name: deviceId,
+        status: DeviceStatus.ONLINE,
+        lastPingAt: new Date(),
+      },
+      update: { status: DeviceStatus.ONLINE, lastPingAt: new Date() },
+    });
+
+    const employeeNo = String(input.employeeNo ?? '').trim();
+    const rawPayload = {
+      ...(typeof input.rawPayload === 'object' && input.rawPayload
+        ? (input.rawPayload as Record<string, unknown>)
+        : { raw: input.rawPayload }),
+      ...(input.dedupeKey ? { agentDedupeKey: input.dedupeKey } : {}),
+      source: input.dedupeKey ? 'relay-agent' : 'webhook',
+    } as Prisma.InputJsonValue;
+
+    if (input.dedupeKey) {
+      const recent = await this.prisma.recognitionEvent.findMany({
+        where: {
+          deviceId,
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 400,
+        select: { rawPayload: true, status: true, transactionId: true },
+      });
+      const hit = recent.find((row) => {
+        const payload = row.rawPayload as { agentDedupeKey?: string } | null;
+        return payload?.agentDedupeKey === input.dedupeKey;
+      });
+      if (hit) {
+        return {
+          status: hit.status,
+          transactionId: hit.transactionId ?? undefined,
+          message: `Duplicate event ignored (${input.dedupeKey})`,
+        };
+      }
+    }
+
+    const driver = await this.resolveDriverByEmployeeNo(deviceId, employeeNo);
 
     if (!driver || driver.status !== DriverStatus.ACTIVE) {
       await this.prisma.recognitionEvent.create({
@@ -117,10 +179,10 @@ export class RecognitionService {
           deviceId,
           driverId: driver?.id,
           status: RecognitionEventStatus.UNMATCHED,
-          rawPayload: parsed.raw as Prisma.InputJsonValue,
-          employeeNoRaw: parsed.employeeNo,
-          eventDateTime: parsed.eventDateTime,
-          capturedPhotoUrl,
+          rawPayload,
+          employeeNoRaw: employeeNo,
+          eventDateTime: input.eventDateTime ?? undefined,
+          capturedPhotoUrl: input.capturedPhotoUrl,
         },
       });
       return {
@@ -133,10 +195,6 @@ export class RecognitionService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Per-driver advisory lock: serializes concurrent recognition events for
-        // the SAME driver (e.g. two gates firing within milliseconds of each
-        // other) so the cooldown check below can never race. Automatically
-        // released when the transaction commits/rolls back.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${driver.id}))`;
 
         const cooldownMs =
@@ -158,10 +216,10 @@ export class RecognitionService {
               deviceId,
               driverId: driver.id,
               status: RecognitionEventStatus.IGNORED_COOLDOWN,
-              rawPayload: parsed.raw as Prisma.InputJsonValue,
-              employeeNoRaw: parsed.employeeNo,
-              eventDateTime: parsed.eventDateTime,
-              capturedPhotoUrl,
+              rawPayload,
+              employeeNoRaw: employeeNo,
+              eventDateTime: input.eventDateTime ?? undefined,
+              capturedPhotoUrl: input.capturedPhotoUrl,
             },
           });
           return {
@@ -185,10 +243,10 @@ export class RecognitionService {
             deviceId,
             driverId: driver.id,
             status: RecognitionEventStatus.PROCESSED,
-            rawPayload: parsed.raw as Prisma.InputJsonValue,
-            employeeNoRaw: parsed.employeeNo,
-            eventDateTime: parsed.eventDateTime,
-            capturedPhotoUrl,
+            rawPayload,
+            employeeNoRaw: employeeNo,
+            eventDateTime: input.eventDateTime ?? undefined,
+            capturedPhotoUrl: input.capturedPhotoUrl,
             transactionId: transaction.id,
           },
         });
@@ -208,10 +266,10 @@ export class RecognitionService {
           deviceId,
           driverId: driver.id,
           status: RecognitionEventStatus.ERROR,
-          rawPayload: parsed.raw as Prisma.InputJsonValue,
-          employeeNoRaw: parsed.employeeNo,
-          eventDateTime: parsed.eventDateTime,
-          capturedPhotoUrl,
+          rawPayload,
+          employeeNoRaw: employeeNo,
+          eventDateTime: input.eventDateTime ?? undefined,
+          capturedPhotoUrl: input.capturedPhotoUrl,
         },
       });
       throw error;

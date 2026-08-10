@@ -5,5 +5,6 @@ import { RecognitionService } from './recognition.service';
 @Module({
   controllers: [HikvisionWebhookController],
   providers: [RecognitionService],
+  exports: [RecognitionService],
 })
 export class WebhooksModule {}

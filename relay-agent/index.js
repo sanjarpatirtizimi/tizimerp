@@ -2,6 +2,11 @@ require("dotenv").config();
 const axios = require("axios");
 const Jimp = require("jimp");
 const { DigestHttpClient } = require("./digest-http-client");
+const {
+  pollNewFaceEvents,
+  enqueueEvents,
+  flushOutbox,
+} = require("./acs-events");
 
 const {
   API_BASE_URL,
@@ -12,6 +17,7 @@ const {
   DEVICE_USERNAME,
   DEVICE_PASSWORD,
   POLL_INTERVAL_MS = "1000",
+  STAMP_POLL_ENABLED = "true",
 } = process.env;
 
 function assertConfig() {
@@ -62,7 +68,11 @@ async function main() {
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma: ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Tekshirish oralig'i: ${POLL_INTERVAL_MS} ms`);
-  log("Person ID = platformadagi haydovchi ID (unique, chalkashmaydi).");
+  log(
+    STAMP_POLL_ENABLED === "false"
+      ? "Pechat poll: o'chirilgan"
+      : "Pechat poll: LAN AcsEvent (ishonchli yo'l)",
+  );
   console.log("");
 
   // eslint-disable-next-line no-constant-condition
@@ -73,8 +83,22 @@ async function main() {
       const message = error.response
         ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
         : error.message;
-      log(`Serverdan so'rov xatosi: ${message}`);
+      log(`Ro'yxatga olish poll xatosi: ${message}`);
     }
+
+    if (STAMP_POLL_ENABLED !== "false") {
+      try {
+        const events = await pollNewFaceEvents(deviceClient, log);
+        enqueueEvents(events);
+        await flushOutbox(api, DEVICE_ID, log);
+      } catch (error) {
+        const message = error.response
+          ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
+          : error.message;
+        log(`AcsEvent/pechat xatosi: ${message}`);
+      }
+    }
+
     await sleep(Number(POLL_INTERVAL_MS) || 1000);
   }
 }

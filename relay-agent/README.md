@@ -4,68 +4,51 @@ Bu — Face ID qurilmasi bilan **bir xil Wi-Fi/LAN tarmog'ida** turgan planshet 
 kompyuterga o'rnatiladigan kichik fon dasturi. U doim ishlab turadi va quyidagini
 avtomatik bajaradi:
 
-1. Har ~1 soniyada Sanjar Patir serveridan "yangi qo'shilgan haydovchilar bormi?"
-   deb so'raydi.
-2. Topilgan har bir haydovchi uchun uning rasmini serverdan yuklab oladi.
-3. Rasmni **to'g'ridan-to'g'ri, mahalliy tarmoq orqali** (internet orqali emas)
-   Face ID qurilmasiga yozadi. Person ID sifatida platformadagi unique haydovchi
-   ID ishlatiladi — qurilmadagi oddiy "1", "2" raqamlari emas, shuning uchun
-   haydovchilar chalkashmaydi.
-4. Natijani (muvaffaqiyatli/xato) serverga qaytarib beradi.
+## Asosiy vazifalar
 
-Bu jarayonda operator hech narsaga qo'l tegizmaydi — ilovada haydovchi + rasm
-qo'shilgach, bir necha soniya ichida u avtomatik qurilmaga yoziladi.
+1. **Yuz yuklash** — serverdan yangi haydovchi rasmini olib Face IDga yozadi.
+2. **Pechat (ishonchli yo'l)** — Face IDdan `AcsEvent` ni mahalliy tarmoqda o'qiydi
+   va serverga yuboradi. Internet webhook uzilib qolsa ham pechat yo'qolmaydi;
+   server vaqtincha javob bermasa, voqealar `acs-outbox.json` da navbatda saqlanadi.
+
+> Muhim: pechat uchun agent **doim yoqiq** turishi kerak (shu kompyuter/planshet
+> Face ID bilan bir Wi‑Fi da).
 
 ## O'rnatish (bir marta)
 
-1. **Node.js** o'rnating (agar hali yo'q bo'lsa): https://nodejs.org — "LTS" versiyani
-   yuklab, oddiy "Next, Next, Finish" bilan o'rnating.
-2. Bu papkani (`relay-agent`) planshet/kompyuterga nusxalang.
-3. Buyruqlar oynasini (Command Prompt / PowerShell) shu papkada oching va bir marta
-   ishga tushiring:
+1. **Node.js** o'rnating (LTS): https://nodejs.org
+2. `relay-agent` papkasini nusxalang.
+3. Shu papkada:
    ```
    npm install
    ```
-4. `.env.example` faylidan nusxa olib, nomini `.env` ga o'zgartiring va quyidagilarni
-   to'ldiring:
-   - `API_BASE_URL` — Sanjar Patir backend manzili (o'zgartirmasangiz ham bo'ladi,
-     standart qiymat allaqachon to'g'ri).
-   - `DEVICE_ID` va `AGENT_KEY` — ilovada **Qurilmalar** sahifasida shu qurilma
-     qatorida "Agent ulash" tugmasini bosib oling (kalit faqat bir marta ko'rsatiladi!).
-   - `DEVICE_IP`, `DEVICE_PORT` — qurilmaning shu tarmoqdagi IP-manzili (qurilma
-     ekranidan yoki router sozlamalaridan ko'rish mumkin).
-   - `DEVICE_USERNAME`, `DEVICE_PASSWORD` — qurilmaning admin login/paroli (odatda
-     qurilmani birinchi sozlaganda o'rnatilgan).
+4. `.env.example` → `.env` qilib to'ldiring:
+   - `API_BASE_URL` — backend (`.../api`)
+   - `DEVICE_ID` + `AGENT_KEY` — ilova → **Qurilmalar** → Agent kaliti
+   - `DEVICE_IP`, `DEVICE_PORT`, `DEVICE_USERNAME`, `DEVICE_PASSWORD` — Face ID
+   - `STAMP_POLL_ENABLED=true` — pechat poll yoqilgan bo'lsin
 
 ## Ishga tushirish
 
-Buyruqlar oynasida:
 ```
 npm start
 ```
 
-Ekranda har bir haydovchi uchun "✔ ... qurilmaga muvaffaqiyatli yozildi" yoki xato
-xabari ko'rinib turadi. Oynani yopmang — u shu tarzda doim fonda ishlab turishi kerak.
+Oynani yopmang. Logda ko'rinadi:
+- `AcsEvent: N ta yangi yuz voqeasi`
+- `✓ pechat: Person ID ...`
 
-## Doim avtomatik ishlab turishi uchun (tavsiya etiladi)
+## Windows da doim ishlashi
 
-Planshet/kompyuter qayta yoqilganda dastur o'zi ishga tushishi uchun, Windows'da
-**Task Scheduler** orqali sozlash mumkin:
+Task Scheduler → At log on → `node index.js`, Start in = `relay-agent` papkasi.
 
-1. Task Scheduler'ni oching → "Create Task"
-2. "Triggers" bo'limida "At log on" ni tanlang
-3. "Actions" bo'limida:
-   - Program/script: `node`
-   - Arguments: `index.js`
-   - Start in: shu `relay-agent` papkasining to'liq manzili
-4. Saqlang.
+## Haydovchini bog'lash (pechat ishlashi uchun)
 
-Shundan keyin planshet yoqilganda dastur avtomatik, ekranda hech narsa ko'rsatmasdan
-fonda ishga tushadi.
+1. Face IDda haydovchini qo'shing (Person ID ni eslab qoling, masalan `1`)
+2. Dasturda haydovchi → **Qurilma ulash** → shu qurilma + Person ID → **Saqlash**
+3. Haydovchi **FAOL** bo'lishi kerak
+4. Agent ishlab turganda Face IDga qarasa pechat yoziladi
 
 ## Bitta qurilma = bitta agent
 
-Har bir Face ID qurilmasi uchun alohida `.env` sozlamasi (va shu qurilmaning o'z
-`DEVICE_ID`/`AGENT_KEY`i) kerak. Agar bitta planshetda bir nechta qurilmani boshqarish
-kerak bo'lsa, shu papkadan bir nechta nusxa oling, har birida alohida `.env` bilan,
-va har birini alohida ishga tushiring.
+Har Face ID uchun alohida `.env` (o'z `DEVICE_ID` / `AGENT_KEY` / IP).
