@@ -34,8 +34,12 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/brand/sanjar-patir-mark.png", type: "image/png" }],
-    apple: [{ url: "/brand/sanjar-patir-mark.png", type: "image/png" }],
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    // iPhone Safari "Add to Home Screen" uses this 180×180 opaque PNG.
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
