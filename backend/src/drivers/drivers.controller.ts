@@ -19,6 +19,7 @@ import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 import { RequeueEnrollmentDto } from './dto/requeue-enrollment.dto';
+import { UpdateTelegramDto } from './dto/update-telegram.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -148,6 +149,20 @@ export class DriversController {
     @CurrentUser() user: StaffJwtPayload,
   ) {
     return this.driversService.update(id, dto, user.sub);
+  }
+
+  @Patch(':id/telegram')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  setTelegram(
+    @Param('id') id: string,
+    @Body() dto: UpdateTelegramDto,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.setTelegramUsername(
+      id,
+      dto.telegramUsername,
+      user.sub,
+    );
   }
 
   @Delete(':id')

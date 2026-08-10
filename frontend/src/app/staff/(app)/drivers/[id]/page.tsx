@@ -27,6 +27,7 @@ import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-d
 import { DevicePairingPanel } from "@/components/drivers/device-pairing-panel";
 import { DriverPhotoButton } from "@/components/drivers/driver-photo-button";
 import { EditDriverDialog } from "@/components/drivers/edit-driver-dialog";
+import { TelegramField } from "@/components/drivers/telegram-field";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
 import { getApiErrorMessage } from "@/lib/api-client";
@@ -146,6 +147,13 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
       </div>
 
       {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
+
+      {driver && (
+        <TelegramField
+          driver={driver}
+          onChanged={(updated) => setDriver(updated)}
+        />
+      )}
 
       {isSuperAdmin && driver && (
         <div className="flex items-center justify-between gap-2">

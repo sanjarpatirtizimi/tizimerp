@@ -51,6 +51,14 @@ export interface DriverDeviceRegistration {
   createdAt: string;
 }
 
+export type RecognitionEventStatus =
+  | "PROCESSED"
+  | "IGNORED_COOLDOWN"
+  | "UNMATCHED"
+  | "ERROR";
+
+export type FeedbackStatus = "OPEN" | "READ" | "RESOLVED";
+
 export interface Driver {
   id: string;
   fullName: string;
@@ -60,9 +68,52 @@ export interface Driver {
   carModel: string | null;
   photoUrl: string | null;
   status: DriverStatus;
+  telegramUsername?: string | null;
   createdAt: string;
   updatedAt: string;
   deviceRegistrations?: DriverDeviceRegistration[];
+}
+
+export interface VisitEvent {
+  id: string;
+  deviceId: string;
+  driverId: string | null;
+  employeeNoRaw: string | null;
+  eventDateTime: string | null;
+  status: RecognitionEventStatus;
+  isRedFlagged: boolean;
+  flaggedAt: string | null;
+  flagNote: string | null;
+  createdAt: string;
+  driver: {
+    id: string;
+    fullName: string;
+    phone: string;
+    carPlate: string | null;
+    photoUrl: string | null;
+    status: DriverStatus;
+    telegramUsername: string | null;
+  } | null;
+  device: { id: string; name: string };
+  flaggedBy: { id: string; fullName: string } | null;
+  transaction: { id: string; amount: string; type: string } | null;
+}
+
+export interface DriverFeedback {
+  id: string;
+  driverId: string;
+  body: string;
+  status: FeedbackStatus;
+  staffNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  driver: {
+    id: string;
+    fullName: string;
+    phone: string;
+    carPlate?: string | null;
+    telegramUsername: string | null;
+  };
 }
 
 export interface Product {

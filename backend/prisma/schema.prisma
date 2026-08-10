@@ -68,6 +68,12 @@ enum RecognitionEventStatus {
   ERROR // processing failed (bad payload, DB error, etc.)
 }
 
+enum FeedbackStatus {
+  OPEN
+  READ
+  RESOLVED
+}
+
 // ----------------------------------------------------------------------------
 // AUTH & ACCESS
 // ----------------------------------------------------------------------------
@@ -87,6 +93,7 @@ model User {
   issuedTransactions Transaction[]  @relation("TransactionOperator")
   auditLogs          AuditLog[]
   refreshTokens      RefreshToken[]
+  flaggedVisits      RecognitionEvent[] @relation("VisitFlaggedBy")
 
   @@index([role])
   @@map("users")
@@ -109,6 +116,8 @@ model Driver {
   status        DriverStatus  @default(PENDING)
   /// Soft-delete timestamp. Null = active record. Ledger rows are kept.
   deletedAt     DateTime?
+  /// Optional Telegram handle (@username) or phone text — no bot required.
+  telegramUsername String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -117,6 +126,7 @@ model Driver {
   recognitionEvents   RecognitionEvent[]
   otpCodes            OtpCode[]
   refreshTokens       RefreshToken[]
+  feedback            DriverFeedback[]
 
   @@index([status])
   @@index([phone])
@@ -235,11 +245,34 @@ model RecognitionEvent {
   capturedPhotoUrl String? // face snapshot the device attached to this event, if any
   transactionId String?                @unique
   transaction   Transaction?           @relation(fields: [transactionId], references: [id])
+  /// Staff red-flag on this specific visit/pechat (not the whole driver).
+  isRedFlagged Boolean   @default(false)
+  flaggedAt    DateTime?
+  flaggedById  String?
+  flaggedBy    User?     @relation("VisitFlaggedBy", fields: [flaggedById], references: [id])
+  flagNote     String?
   createdAt     DateTime               @default(now())
 
   @@index([driverId, createdAt])
   @@index([deviceId, createdAt])
+  @@index([isRedFlagged, createdAt])
   @@map("recognition_events")
+}
+
+/// Driver opinions / complaints visible to Operator and SuperAdmin.
+model DriverFeedback {
+  id        String         @id @default(cuid())
+  driverId  String
+  driver    Driver         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  body      String
+  status    FeedbackStatus @default(OPEN)
+  staffNote String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([driverId, createdAt])
+  @@map("driver_feedback")
 }
 
 // ----------------------------------------------------------------------------

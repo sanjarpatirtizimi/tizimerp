@@ -12,6 +12,9 @@ import {
   LogOut,
   Menu,
   BarChart3,
+  Clock3,
+  Flag,
+  MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,10 +29,16 @@ import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
-const primaryNav = [
+const bottomNav = [
   { href: "/staff/dashboard", label: "Bosh sahifa", icon: LayoutDashboard },
-  { href: "/staff/drivers/new", label: "Ro'yxatga olish", icon: Users },
+  { href: "/staff/visits", label: "Kelishlar", icon: Clock3 },
+  { href: "/staff/drivers/new", label: "Ro'yxat", icon: Users },
   { href: "/staff/devices", label: "Qurilmalar", icon: Server },
+];
+
+const sheetExtraNav = [
+  { href: "/staff/flagged", label: "Qizil belgilar", icon: Flag },
+  { href: "/staff/feedback", label: "Murojaatlar", icon: MessageSquareText },
 ];
 
 const superAdminNav = [
@@ -48,6 +57,12 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { claims, logout } = useAuth();
   const isSuperAdmin = claims?.kind === "staff" && claims.role === "SUPER_ADMIN";
+
+  const menuNav = [
+    ...bottomNav,
+    ...sheetExtraNav,
+    ...(isSuperAdmin ? superAdminNav : []),
+  ];
 
   async function handleLogout() {
     await logout();
@@ -75,7 +90,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                 <SheetTitle>Menyu</SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col gap-1 px-2">
-                {[...primaryNav, ...(isSuperAdmin ? superAdminNav : [])].map((item) => (
+                {menuNav.map((item) => (
                   <SheetClose asChild key={item.href}>
                     <Link
                       href={item.href}
@@ -121,7 +136,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 pb-20">{children}</main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 flex h-16 items-center justify-around border-t bg-background">
-        {primaryNav.map((item) => {
+        {bottomNav.map((item) => {
           const active = pathname === item.href;
           return (
             <Link

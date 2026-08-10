@@ -61,6 +61,10 @@ class DigestHttpClient {
     return this.execute("POST", url, body);
   }
 
+  delete(url, body = {}) {
+    return this.execute("DELETE", url, body);
+  }
+
   async execute(method, url, body) {
     const prepared = await this.prepareBody(body);
     const config = {

@@ -80,6 +80,11 @@ export const driversApi = {
     },
   ) => apiClient.patch<Driver>(`/drivers/${id}`, payload).then((r) => r.data),
 
+  setTelegram: (id: string, telegramUsername: string | null) =>
+    apiClient
+      .patch<Driver>(`/drivers/${id}/telegram`, { telegramUsername })
+      .then((r) => r.data),
+
   setStatus: (id: string, status: DriverStatus) =>
     apiClient.patch<Driver>(`/drivers/${id}/status`, { status }).then((r) => r.data),
 

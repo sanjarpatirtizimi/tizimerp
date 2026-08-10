@@ -27,6 +27,19 @@ export const deviceStatusLabels: Record<string, string> = {
   ERROR: "XATOLIK",
 };
 
+export const visitStatusLabels: Record<string, string> = {
+  PROCESSED: "Pechat",
+  IGNORED_COOLDOWN: "Cooldown",
+  UNMATCHED: "Noma'lum",
+  ERROR: "Xato",
+};
+
+export const feedbackStatusLabels: Record<string, string> = {
+  OPEN: "Yangi",
+  READ: "Ko'rilgan",
+  RESOLVED: "Yechilgan",
+};
+
 export function initials(name: string): string {
   return name
     .split(" ")

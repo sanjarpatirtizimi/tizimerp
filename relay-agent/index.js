@@ -57,17 +57,34 @@ async function main() {
     headers: { Authorization: `Bearer ${AGENT_KEY}` },
     timeout: 20000,
   });
+  // Enrollment (face upload) can be slow; pechat uses a shorter timeout.
   const deviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
     30000,
   );
+  const stampDeviceClient = new DigestHttpClient(
+    `http://${DEVICE_IP}:${DEVICE_PORT}`,
+    DEVICE_USERNAME,
+    DEVICE_PASSWORD,
+    8000,
+  );
+
+  const stampApi = axios.create({
+    baseURL: API_BASE_URL,
+    headers: { Authorization: `Bearer ${AGENT_KEY}` },
+    timeout: 12000,
+  });
+
+  const pollMs = Number(POLL_INTERVAL_MS) || 500;
+  const enrollmentEveryMs = 10_000;
+  let lastEnrollmentAt = 0;
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma: ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
-  log(`Tekshirish oralig'i: ${POLL_INTERVAL_MS} ms`);
+  log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);
   log(
     STAMP_POLL_ENABLED === "false"
       ? "Pechat poll: o'chirilgan"
@@ -77,20 +94,12 @@ async function main() {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    try {
-      await pollOnce(api, deviceClient, backendOrigin);
-    } catch (error) {
-      const message = error.response
-        ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
-        : error.message;
-      log(`Ro'yxatga olish poll xatosi: ${message}`);
-    }
-
+    // Pechat first — do not wait behind enrollment / Render cold starts.
     if (STAMP_POLL_ENABLED !== "false") {
       try {
-        const events = await pollNewFaceEvents(deviceClient, log);
+        const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
-        await flushOutbox(api, DEVICE_ID, log);
+        await flushOutbox(stampApi, DEVICE_ID, log);
       } catch (error) {
         const message = error.response
           ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
@@ -99,7 +108,19 @@ async function main() {
       }
     }
 
-    await sleep(Number(POLL_INTERVAL_MS) || 1000);
+    if (Date.now() - lastEnrollmentAt >= enrollmentEveryMs) {
+      lastEnrollmentAt = Date.now();
+      try {
+        await pollOnce(api, deviceClient, backendOrigin);
+      } catch (error) {
+        const message = error.response
+          ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
+          : error.message;
+        log(`Ro'yxatga olish poll xatosi: ${message}`);
+      }
+    }
+
+    await sleep(pollMs);
   }
 }
 

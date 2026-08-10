@@ -15,6 +15,8 @@ import { HikvisionModule } from './hikvision/hikvision.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AgentModule } from './agent/agent.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { VisitsModule } from './visits/visits.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
     WebhooksModule,
     AgentModule,
     AnalyticsModule,
+    VisitsModule,
+    FeedbackModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -82,39 +82,56 @@ function formatWithOffset(date, offsetMinutes) {
   );
 }
 
+let cachedDeviceClock = null;
+
 /**
  * Read device clock so AcsEvent start/end match the terminal's timezone.
- * Falls back to PC local offset if device time is unavailable.
+ * Cached briefly so we do not hit /ISAPI/System/time every poll.
  */
 async function getDeviceTimeWindow(deviceClient, lookbackMs) {
-  let offsetMinutes = -new Date().getTimezoneOffset(); // PC local
-  let end = new Date();
-
-  try {
-    const res = await deviceClient.get("/ISAPI/System/time");
-    const xml = typeof res.data === "string" ? res.data : "";
-    const localMatch = xml.match(/<localTime>([^<]+)<\/localTime>/i);
-    if (localMatch) {
-      const raw = localMatch[1].trim();
-      // e.g. 2026-08-10T18:59:56+08:00
-      const parsed = new Date(raw);
-      if (!Number.isNaN(parsed.getTime())) {
-        end = parsed;
-        const off = raw.match(/([+-])(\d{2}):(\d{2})$/);
-        if (off) {
-          const sign = off[1] === "-" ? -1 : 1;
-          offsetMinutes = sign * (parseInt(off[2], 10) * 60 + parseInt(off[3], 10));
+  const now = Date.now();
+  if (
+    !cachedDeviceClock ||
+    now - cachedDeviceClock.fetchedAt > 120_000
+  ) {
+    let offsetMinutes = -new Date().getTimezoneOffset();
+    let end = new Date();
+    try {
+      const res = await deviceClient.get("/ISAPI/System/time");
+      const xml = typeof res.data === "string" ? res.data : "";
+      const localMatch = xml.match(/<localTime>([^<]+)<\/localTime>/i);
+      if (localMatch) {
+        const raw = localMatch[1].trim();
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+          end = parsed;
+          const off = raw.match(/([+-])(\d{2}):(\d{2})$/);
+          if (off) {
+            const sign = off[1] === "-" ? -1 : 1;
+            offsetMinutes =
+              sign * (parseInt(off[2], 10) * 60 + parseInt(off[3], 10));
+          }
         }
       }
+    } catch {
+      // PC clock fallback
     }
-  } catch {
-    // keep PC clock fallback
+    cachedDeviceClock = {
+      offsetMinutes,
+      endMs: end.getTime(),
+      fetchedAt: now,
+    };
+  } else {
+    // Advance cached end with wall-clock drift since last fetch
+    cachedDeviceClock.endMs += now - cachedDeviceClock.fetchedAt;
+    cachedDeviceClock.fetchedAt = now;
   }
 
+  const end = new Date(cachedDeviceClock.endMs);
   const start = new Date(end.getTime() - lookbackMs);
   return {
-    startTime: formatWithOffset(start, offsetMinutes),
-    endTime: formatWithOffset(end, offsetMinutes),
+    startTime: formatWithOffset(start, cachedDeviceClock.offsetMinutes),
+    endTime: formatWithOffset(end, cachedDeviceClock.offsetMinutes),
   };
 }
 
@@ -126,20 +143,60 @@ async function postAcsEvent(deviceClient, cond) {
 }
 
 /**
+ * Fetch face-success events, preferring the newest page when total > maxResults.
+ */
+async function fetchFaceRows(deviceClient, base) {
+  const first = await postAcsEvent(deviceClient, {
+    ...base,
+    searchID: String(Date.now()),
+    searchResultPosition: 0,
+    minor: 75,
+  });
+  if (first.status >= 400) {
+    throw new Error(
+      `AcsEvent HTTP ${first.status} ${JSON.stringify(first.data).slice(0, 240)}`,
+    );
+  }
+
+  const acs = first.data?.AcsEvent || {};
+  const total = Number(acs.totalMatches || 0);
+  let list = acs.InfoList || acs.infoList || [];
+  if (!Array.isArray(list)) list = [];
+
+  // If more matches than one page, jump near the end to get newest events.
+  if (total > base.maxResults) {
+    const position = Math.max(0, total - base.maxResults);
+    const page = await postAcsEvent(deviceClient, {
+      ...base,
+      searchID: String(Date.now() + 1),
+      searchResultPosition: position,
+      minor: 75,
+    });
+    if (page.status < 400) {
+      const newer =
+        page.data?.AcsEvent?.InfoList ||
+        page.data?.AcsEvent?.infoList ||
+        [];
+      if (Array.isArray(newer) && newer.length) list = newer;
+    }
+  }
+
+  return { total, list };
+}
+
+/**
  * Poll Face ID access events over LAN and return newly seen face matches.
- * This device requires `minor` (MessageParametersLack without it) and
- * maxResults ≤ 30. Time window is taken from the device clock.
  */
 async function pollNewFaceEvents(deviceClient, log) {
   const state = loadState();
   const seen = new Set(state.seenKeys || []);
+  // Short window = faster AcsEvent query on the terminal.
   const { startTime, endTime } = await getDeviceTimeWindow(
     deviceClient,
-    15 * 60 * 1000,
+    3 * 60 * 1000,
   );
 
   const base = {
-    searchID: "1",
     searchResultPosition: 0,
     maxResults: 30,
     major: 5,
@@ -147,46 +204,10 @@ async function pollNewFaceEvents(deviceClient, log) {
     endTime,
   };
 
-  // This terminal requires minor. 75 = face auth success on most Hikvision AC units.
-  const minorsToTry = [75, 38]; // 75 face success, 38 card success (harmless if unused)
-  let rows = [];
-  let lastError = null;
-
-  for (const minor of minorsToTry) {
-    const response = await postAcsEvent(deviceClient, { ...base, minor });
-    if (response.status >= 400) {
-      lastError = `AcsEvent HTTP ${response.status} ${JSON.stringify(response.data).slice(0, 240)}`;
-      continue;
-    }
-    const list =
-      response.data?.AcsEvent?.InfoList ||
-      response.data?.AcsEvent?.infoList ||
-      response.data?.InfoList ||
-      [];
-    if (Array.isArray(list) && list.length) {
-      rows = rows.concat(list);
-    } else if (response.status < 400) {
-      lastError = null; // valid empty result
-    }
-  }
-
-  if (lastError && rows.length === 0) {
-    // One more attempt: only minor=75 (required success path)
-    const response = await postAcsEvent(deviceClient, { ...base, minor: 75 });
-    if (response.status >= 400) {
-      throw new Error(
-        `AcsEvent HTTP ${response.status} ${JSON.stringify(response.data).slice(0, 240)}`,
-      );
-    }
-    const list =
-      response.data?.AcsEvent?.InfoList ||
-      response.data?.AcsEvent?.infoList ||
-      response.data?.InfoList ||
-      [];
-    rows = Array.isArray(list) ? list : [];
-  }
+  const { total, list: rows } = await fetchFaceRows(deviceClient, base);
 
   const fresh = [];
+  let skippedSeen = 0;
   for (const row of rows) {
     const minor = Number(row.minor ?? row.Minor ?? 0);
     const employeeNo = pickEmployeeNo(row);
@@ -205,18 +226,34 @@ async function pollNewFaceEvents(deviceClient, log) {
       name: row.name || row.Name || undefined,
     };
     const key = eventKey(event);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      skippedSeen += 1;
+      continue;
+    }
     seen.add(key);
     fresh.push(event);
   }
 
   state.seenKeys = [...seen];
   state.lastPollAt = new Date().toISOString();
-  saveState(state);
 
   if (fresh.length > 0) {
-    log(`AcsEvent: ${fresh.length} ta yangi yuz voqeasi (${startTime} → ${endTime})`);
+    log(
+      `AcsEvent: ${fresh.length} ta YANGI yuz (${total} jami oynada) ${startTime} → ${endTime}`,
+    );
+  } else if (total > 0 && skippedSeen > 0) {
+    // Device has events but none are new — usually means a second face touch
+    // did not create a new AcsEvent serial (device-side interval/optimization).
+    const lastSkip = state.lastSkipLogAt ? Date.parse(state.lastSkipLogAt) : 0;
+    if (Date.now() - lastSkip > 60_000) {
+      log(
+        `AcsEvent: yangi serial yo'q (qurilmada ${total} ta eski voqea). Yuzdan keyin pechat ~bir necha soniyada keladi.`,
+      );
+      state.lastSkipLogAt = new Date().toISOString();
+    }
   }
+
+  saveState(state);
   return fresh;
 }
 
@@ -249,9 +286,11 @@ async function flushOutbox(api, deviceId, log) {
       if (r.status === "PROCESSED") {
         log(`  ✓ pechat: Person ID ${r.employeeNo} (${r.message})`);
       } else if (r.status === "IGNORED_COOLDOWN") {
-        log(`  · cooldown: Person ID ${r.employeeNo}`);
+        log(
+          `  · SERVER COOLDOWN: Person ID ${r.employeeNo} — Render'da RECOGNITION_COOLDOWN_MINUTES=0 qiling. ${r.message || ""}`,
+        );
       } else if (String(r.message || "").includes("Duplicate")) {
-        // already stored
+        log(`  · duplicate (shu serial oldin yozilgan): Person ID ${r.employeeNo}`);
       } else {
         log(`  · ${r.status}: Person ID ${r.employeeNo} — ${r.message}`);
       }

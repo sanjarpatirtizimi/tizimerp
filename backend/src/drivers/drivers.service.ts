@@ -684,6 +684,40 @@ export class DriversService {
     return this.sanitizeDriver(driver);
   }
 
+  /** Normalize @username / phone text; empty clears the field. */
+  async setTelegramUsername(
+    driverId: string,
+    telegramUsername: string | null | undefined,
+    actorId?: string,
+  ) {
+    await this.findOne(driverId);
+    const normalized = this.normalizeTelegramUsername(telegramUsername);
+    const driver = await this.prisma.driver.update({
+      where: { id: driverId },
+      data: { telegramUsername: normalized },
+    });
+    if (actorId) {
+      await this.auditService.log({
+        userId: actorId,
+        action: 'DRIVER_TELEGRAM_UPDATED',
+        entityType: 'Driver',
+        entityId: driverId,
+        metadata: { telegramUsername: normalized },
+      });
+    }
+    return this.sanitizeDriver(driver);
+  }
+
+  private normalizeTelegramUsername(
+    value: string | null | undefined,
+  ): string | null {
+    if (value == null) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('@')) return trimmed.slice(0, 64);
+    return trimmed.slice(0, 64);
+  }
+
   private publicPhotoPath(driverId: string): string {
     return `/api/public/driver-photos/${driverId}`;
   }
