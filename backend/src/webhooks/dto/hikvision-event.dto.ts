@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import {
   IsDateString,
   IsIn,
@@ -6,6 +6,11 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
+
+function toOptionalString({ value }: { value: unknown }): string | undefined {
+  if (value == null || value === '') return undefined;
+  return String(value);
+}
 
 /**
  * The `AccessControllerEvent` object nested inside Hikvision's `event_log`
@@ -16,12 +21,14 @@ import {
  * (e.g. a tamper alarm has no `employeeNoString` at all).
  */
 export class AccessControllerEventDto {
-  /** The Person ID enrolled on the device — this is what we match against Driver.id. */
+  /** The Person ID enrolled on the device — this is what we match against mappings. */
   @IsOptional()
+  @Transform(toOptionalString)
   @IsString()
   employeeNoString?: string;
 
   @IsOptional()
+  @Transform(toOptionalString)
   @IsString()
   employeeNo?: string;
 

@@ -46,10 +46,6 @@ export function DevicePairingPanel({
     () => new Set(linked.map((r) => r.deviceId)),
     [linked],
   );
-  const availableDevices = useMemo(
-    () => devices.filter((d) => !linkedDeviceIds.has(d.id)),
-    [devices, linkedDeviceIds],
-  );
 
   async function handleSave() {
     if (!selectedDeviceId) {
@@ -112,7 +108,8 @@ export function DevicePairingPanel({
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{reg.device.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Person ID: {reg.hikvisionFaceId}
+                    Person ID: <span className="font-medium text-foreground">{reg.hikvisionFaceId}</span>
+                    {" · "}Qurilma ID: {reg.deviceId}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
@@ -137,43 +134,48 @@ export function DevicePairingPanel({
           </ul>
         )}
 
-        {availableDevices.length > 0 ? (
-          <div className="space-y-2 rounded-md border p-3">
-            <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Qurilmani tanlang" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableDevices.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={personId}
-              onChange={(e) => setPersonId(e.target.value)}
-              placeholder="Face ID Person ID (masalan: 1)"
-              inputMode="text"
-            />
-            <Button
-              className="w-full gap-1"
-              onClick={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? <Loader2 className="animate-spin" /> : <Link2 className="size-4" />}
-              Saqlash
-            </Button>
-          </div>
-        ) : devices.length === 0 ? (
+        <div className="space-y-2 rounded-md border p-3">
+          <Select
+            value={selectedDeviceId}
+            onValueChange={setSelectedDeviceId}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Qurilmani tanlang" />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                  {linkedDeviceIds.has(d.id) ? " (yangilash)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={personId}
+            onChange={(e) => setPersonId(e.target.value)}
+            placeholder="Face ID Person ID — Face ID ekranidagi raqam"
+            inputMode="text"
+          />
+          <Button
+            className="w-full gap-1"
+            onClick={handleSave}
+            disabled={isSaving || devices.length === 0}
+          >
+            {isSaving ? <Loader2 className="animate-spin" /> : <Link2 className="size-4" />}
+            Saqlash
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            Muhim: Face ID HTTP Listening URL ichidagi qurilma ID dasturdagi
+            Qurilma ID bilan bir xil bo&apos;lishi kerak (yuqorida ko&apos;rsatilgan).
+            Pechat 60 daqiqada bir marta yoziladi.
+          </p>
+        </div>
+
+        {devices.length === 0 && (
           <p className="text-sm text-muted-foreground">
             Hozircha qurilma yo&apos;q. Avval Face ID signal yuborsin yoki
             Qurilmalar sahifasidan qo&apos;shing.
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Barcha mavjud qurilmalar allaqachon ulangan.
           </p>
         )}
       </CardContent>

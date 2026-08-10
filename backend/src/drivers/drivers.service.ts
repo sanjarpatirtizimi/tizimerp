@@ -342,10 +342,15 @@ export class DriversService {
     });
     if (!device) throw new NotFoundException('Device not found');
 
+    const faceId = dto.hikvisionFaceId.trim();
+    if (!faceId) {
+      throw new BadRequestException('Person ID bo\'sh bo\'lishi mumkin emas');
+    }
+
     const conflict = await this.prisma.driverDeviceRegistration.findFirst({
       where: {
         deviceId: dto.deviceId,
-        hikvisionFaceId: dto.hikvisionFaceId,
+        hikvisionFaceId: faceId,
         NOT: { driverId },
       },
     });
@@ -360,14 +365,14 @@ export class DriversService {
       create: {
         driverId,
         deviceId: dto.deviceId,
-        hikvisionFaceId: dto.hikvisionFaceId,
+        hikvisionFaceId: faceId,
         syncStatus: SyncStatus.SYNCED,
         syncedAt: new Date(),
         pairingExpiresAt: null,
         syncError: null,
       },
       update: {
-        hikvisionFaceId: dto.hikvisionFaceId,
+        hikvisionFaceId: faceId,
         syncStatus: SyncStatus.SYNCED,
         syncedAt: new Date(),
         pairingExpiresAt: null,
@@ -389,7 +394,7 @@ export class DriversService {
       entityId: driverId,
       metadata: {
         deviceId: dto.deviceId,
-        hikvisionFaceId: dto.hikvisionFaceId,
+        hikvisionFaceId: faceId,
       },
     });
 

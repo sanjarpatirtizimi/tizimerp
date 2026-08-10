@@ -235,16 +235,47 @@ export class RecognitionService {
     deviceId: string,
     employeeNo: string,
   ) {
-    const registration = await this.prisma.driverDeviceRegistration.findFirst({
-      where: { deviceId, hikvisionFaceId: employeeNo },
+    const personId = employeeNo.trim();
+    if (!personId) return null;
+
+    // 1) Exact mapping on this webhook device id
+    const onDevice = await this.prisma.driverDeviceRegistration.findFirst({
+      where: { deviceId, hikvisionFaceId: personId },
       include: { driver: true },
     });
-    if (registration) return registration.driver;
+    if (onDevice) return onDevice.driver;
 
-    const claimed = await this.claimPendingPairing(deviceId, employeeNo);
+    // 2) Same Person ID linked under a device whose name equals the webhook id
+    //    (common when URL uses faceid2 but DB id/name drifted).
+    const byDeviceName = await this.prisma.driverDeviceRegistration.findFirst({
+      where: {
+        hikvisionFaceId: personId,
+        device: { name: deviceId },
+      },
+      include: { driver: true },
+    });
+    if (byDeviceName) return byDeviceName.driver;
+
+    // 3) Ulash window (if any)
+    const claimed = await this.claimPendingPairing(deviceId, personId);
     if (claimed) return claimed;
 
-    return this.prisma.driver.findUnique({ where: { id: employeeNo } });
+    // 4) Unique Person ID across the whole system (safe only when exactly one)
+    const globalMatches = await this.prisma.driverDeviceRegistration.findMany({
+      where: { hikvisionFaceId: personId },
+      include: { driver: true },
+      take: 3,
+    });
+    if (globalMatches.length === 1) {
+      this.logger.warn(
+        `[${deviceId}] matched Person ID "${personId}" via unique global mapping ` +
+          `(registration device=${globalMatches[0].deviceId}). Check webhook URL device id.`,
+      );
+      return globalMatches[0].driver;
+    }
+
+    // 5) Platform-enrolled drivers use driver.id as Person ID
+    return this.prisma.driver.findUnique({ where: { id: personId } });
   }
 
   /**

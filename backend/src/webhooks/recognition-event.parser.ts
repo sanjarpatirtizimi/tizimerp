@@ -97,16 +97,32 @@ export async function parseEventLog(
     skipMissingProperties: true,
   });
 
-  const employeeNo =
-    dto.AccessControllerEvent?.employeeNoString ??
-    dto.AccessControllerEvent?.employeeNo ??
-    null;
+  const employeeNo = pickEmployeeNo(
+    dto.AccessControllerEvent?.employeeNoString,
+    dto.AccessControllerEvent?.employeeNo,
+    // Some firmwares put identity only on the raw nested object / alternate keys.
+    findCaseInsensitive(
+      (normalized?.AccessControllerEvent as Record<string, unknown> | undefined) ??
+        undefined,
+      'personId',
+    ),
+    findCaseInsensitive(
+      (normalized?.AccessControllerEvent as Record<string, unknown> | undefined) ??
+        undefined,
+      'employeeNoString',
+    ),
+    findCaseInsensitive(
+      (normalized?.AccessControllerEvent as Record<string, unknown> | undefined) ??
+        undefined,
+      'employeeNo',
+    ),
+  );
 
   const eventDateTime = dto.dateTime ? new Date(dto.dateTime) : null;
 
   return {
     dto,
-    employeeNo: employeeNo && employeeNo !== '' ? employeeNo : null,
+    employeeNo,
     eventType: dto.eventType ?? null,
     eventDateTime:
       eventDateTime && !Number.isNaN(eventDateTime.getTime())
@@ -115,4 +131,14 @@ export async function parseEventLog(
     validationErrors,
     raw: rawEventLog,
   };
+}
+
+/** Coerce device Person IDs (string or number) and skip blanks. */
+function pickEmployeeNo(...candidates: unknown[]): string | null {
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const value = String(candidate).trim();
+    if (value !== '') return value;
+  }
+  return null;
 }
