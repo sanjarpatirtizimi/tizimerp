@@ -68,6 +68,18 @@ export const driversApi = {
       .then((r) => r.data);
   },
 
+  update: (
+    id: string,
+    payload: {
+      fullName?: string;
+      phone?: string;
+      password?: string;
+      carPlate?: string;
+      carBrand?: string;
+      carModel?: string;
+    },
+  ) => apiClient.patch<Driver>(`/drivers/${id}`, payload).then((r) => r.data),
+
   setStatus: (id: string, status: DriverStatus) =>
     apiClient.patch<Driver>(`/drivers/${id}/status`, { status }).then((r) => r.data),
 

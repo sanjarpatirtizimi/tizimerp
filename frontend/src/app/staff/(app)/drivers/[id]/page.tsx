@@ -14,6 +14,7 @@ import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-d
 import { DeviceEnrollmentPanel } from "@/components/drivers/device-enrollment-panel";
 import { DevicePairingPanel } from "@/components/drivers/device-pairing-panel";
 import { DriverPhotoButton } from "@/components/drivers/driver-photo-button";
+import { EditDriverDialog } from "@/components/drivers/edit-driver-dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
 import { driversApi } from "@/lib/api/drivers";
@@ -86,9 +87,15 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Rasmni bosib yuklang/yangilang — bazada saqlanadi, o‘chib ketmaydi
-              </p>
+              <div className="mt-2">
+                <EditDriverDialog
+                  driver={driver}
+                  onSuccess={async (updated) => {
+                    setDriver(updated);
+                    await loadDriver();
+                  }}
+                />
+              </div>
             </div>
             <Badge className={cn(statusStyles[driver.status])} variant="outline">
               {driverStatusLabels[driver.status]}

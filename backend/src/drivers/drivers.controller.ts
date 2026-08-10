@@ -16,6 +16,7 @@ import { DriverStatus, UserRole } from '@prisma/client';
 import { DriversService } from './drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
+import { UpdateDriverDto } from './dto/update-driver.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
 import { RequeueEnrollmentDto } from './dto/requeue-enrollment.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
@@ -137,5 +138,15 @@ export class DriversController {
     @CurrentUser() user: StaffJwtPayload,
   ) {
     return this.driversService.setStatus(id, dto.status, user.sub);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateDriverDto,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.update(id, dto, user.sub);
   }
 }

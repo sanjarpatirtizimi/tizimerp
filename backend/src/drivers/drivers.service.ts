@@ -612,6 +612,62 @@ export class DriversService {
     return this.sanitizeDriver(driver);
   }
 
+  async update(
+    id: string,
+    dto: {
+      fullName?: string;
+      phone?: string;
+      password?: string;
+      carPlate?: string;
+      carBrand?: string;
+      carModel?: string;
+    },
+    operatorId: string,
+  ) {
+    await this.findOne(id);
+
+    if (dto.phone) {
+      const phoneTaken = await this.prisma.driver.findFirst({
+        where: { phone: dto.phone, NOT: { id } },
+      });
+      if (phoneTaken) {
+        throw new ConflictException(
+          'Bu telefon raqami boshqa haydovchiga biriktirilgan',
+        );
+      }
+    }
+
+    const passwordHash = dto.password
+      ? await bcrypt.hash(dto.password, 12)
+      : undefined;
+
+    const driver = await this.prisma.driver.update({
+      where: { id },
+      data: {
+        ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        ...(passwordHash ? { passwordHash } : {}),
+        ...(dto.carPlate !== undefined ? { carPlate: dto.carPlate || null } : {}),
+        ...(dto.carBrand !== undefined ? { carBrand: dto.carBrand || null } : {}),
+        ...(dto.carModel !== undefined ? { carModel: dto.carModel || null } : {}),
+      },
+    });
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_UPDATED',
+      entityType: 'Driver',
+      entityId: id,
+      metadata: {
+        fields: Object.keys(dto).filter(
+          (k) => dto[k as keyof typeof dto] !== undefined,
+        ),
+      },
+    });
+
+    return this.findOne(driver.id);
+  }
+
   async setStatus(id: string, status: DriverStatus, operatorId: string) {
     await this.findOne(id);
     const driver = await this.prisma.driver.update({
