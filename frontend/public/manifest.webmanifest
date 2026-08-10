@@ -1,0 +1,32 @@
+{
+  "name": "Sanjar Patir",
+  "short_name": "Sanjar Patir",
+  "description": "Haydovchilar sodiqlik va hamyon tizimi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fff8ee",
+  "theme_color": "#c45c26",
+  "lang": "uz",
+  "icons": [
+    {
+      "src": "/brand/sanjar-patir-mark.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/sanjar-patir-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/sanjar-patir-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

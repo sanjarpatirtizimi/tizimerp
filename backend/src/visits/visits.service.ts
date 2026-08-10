@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { RecognitionEventStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FlagVisitDto } from './dto/flag-visit.dto';
@@ -61,21 +65,33 @@ export class VisitsService {
     });
     if (!existing) throw new NotFoundException('Visit not found');
 
+    if (dto.isRedFlagged) {
+      const note = dto.flagNote?.trim() ?? '';
+      if (note.length < 2) {
+        throw new BadRequestException(
+          'Qizil belgi uchun izoh majburiy (kamida 2 belgi)',
+        );
+      }
+      return this.prisma.recognitionEvent.update({
+        where: { id },
+        data: {
+          isRedFlagged: true,
+          flaggedAt: new Date(),
+          flaggedById: staffUserId,
+          flagNote: note,
+        },
+        include: visitInclude,
+      });
+    }
+
     return this.prisma.recognitionEvent.update({
       where: { id },
-      data: dto.isRedFlagged
-        ? {
-            isRedFlagged: true,
-            flaggedAt: new Date(),
-            flaggedById: staffUserId,
-            flagNote: dto.flagNote?.trim() || null,
-          }
-        : {
-            isRedFlagged: false,
-            flaggedAt: null,
-            flaggedById: null,
-            flagNote: null,
-          },
+      data: {
+        isRedFlagged: false,
+        flaggedAt: null,
+        flaggedById: null,
+        flagNote: null,
+      },
       include: visitInclude,
     });
   }

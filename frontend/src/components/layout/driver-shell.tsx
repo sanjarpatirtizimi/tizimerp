@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, Truck } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { useAuth } from "@/lib/auth-context";
 
 export function DriverShell({ children }: { children: React.ReactNode }) {
@@ -16,12 +17,14 @@ export function DriverShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background px-4">
-        <div className="flex items-center gap-2 font-semibold tracking-tight">
-          <Truck className="size-5" />
-          Sanjar Patir
-        </div>
-        <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Chiqish">
+      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 backdrop-blur-md">
+        <BrandLogo />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleLogout}
+          aria-label="Chiqish"
+        >
           <LogOut className="size-4" />
         </Button>
       </header>

@@ -1,10 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Flag, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { visitsApi } from "@/lib/api/visits";
 import { formatDateTime, formatUzs, visitStatusLabels } from "@/lib/format";
@@ -42,16 +53,50 @@ function VisitRow({
   visit: VisitEvent;
   onChanged: (visit: VisitEvent) => void;
 }) {
-  async function toggleFlag() {
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function clearFlag() {
+    setSaving(true);
     try {
-      const updated = await visitsApi.setFlag(visit.id, !visit.isRedFlagged);
+      const updated = await visitsApi.setFlag(visit.id, false);
       onChanged(updated);
-      toast.success(
-        updated.isRedFlagged ? "Qizil belgi qo'yildi" : "Belgi olib tashlandi",
-      );
+      toast.success("Belgi olib tashlandi");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Belgini o'zgartirib bo'lmadi"));
+    } finally {
+      setSaving(false);
     }
+  }
+
+  async function confirmFlag() {
+    const trimmed = note.trim();
+    if (trimmed.length < 2) {
+      toast.error("Izoh majburiy — kamida 2 belgi yozing");
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await visitsApi.setFlag(visit.id, true, trimmed);
+      onChanged(updated);
+      setFlagOpen(false);
+      setNote("");
+      toast.success("Qizil belgi qo'yildi");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Belgini o'zgartirib bo'lmadi"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onFlagClick() {
+    if (visit.isRedFlagged) {
+      void clearFlag();
+      return;
+    }
+    setNote("");
+    setFlagOpen(true);
   }
 
   const when = visit.eventDateTime || visit.createdAt;
@@ -100,24 +145,72 @@ function VisitRow({
             </p>
           )}
           {visit.flagNote && (
-            <p className="text-xs text-destructive">{visit.flagNote}</p>
+            <p className="text-xs text-destructive">Izoh: {visit.flagNote}</p>
           )}
         </div>
         <Button
           type="button"
           size="icon-sm"
           variant="ghost"
+          disabled={saving}
           className={cn(
             visit.isRedFlagged
               ? "text-destructive hover:text-destructive"
               : "text-muted-foreground",
           )}
-          onClick={() => void toggleFlag()}
-          aria-label={visit.isRedFlagged ? "Belgini olib tashlash" : "Qizil belgi"}
+          onClick={onFlagClick}
+          aria-label={
+            visit.isRedFlagged ? "Belgini olib tashlash" : "Qizil belgi"
+          }
         >
-          <Flag className={cn("size-4", visit.isRedFlagged && "fill-current")} />
+          {saving ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Flag
+              className={cn("size-4", visit.isRedFlagged && "fill-current")}
+            />
+          )}
         </Button>
       </div>
+
+      <Dialog open={flagOpen} onOpenChange={setFlagOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Qizil belgi</DialogTitle>
+            <DialogDescription>
+              Izoh majburiy. Nima uchun bu kelish shubhali ekanini yozing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor={`flag-note-${visit.id}`}>Izoh</Label>
+            <Textarea
+              id={`flag-note-${visit.id}`}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Masalan: bir necha marta ketma-ket pechat..."
+              rows={3}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setFlagOpen(false)}
+              disabled={saving}
+            >
+              Bekor
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmFlag()}
+              disabled={saving}
+            >
+              {saving && <Loader2 className="animate-spin" />}
+              Belgilash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }

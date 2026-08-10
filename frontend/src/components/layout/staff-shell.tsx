@@ -26,6 +26,7 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -71,9 +72,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background px-4">
-        <Link href="/staff/dashboard" className="font-semibold tracking-tight">
-          Sanjar Patir
+      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 backdrop-blur-md">
+        <Link href="/staff/dashboard" aria-label="Sanjar Patir">
+          <BrandLogo />
         </Link>
         <div className="flex items-center gap-1">
           <span className="hidden text-xs text-muted-foreground sm:inline">

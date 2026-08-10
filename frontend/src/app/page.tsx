@@ -1,19 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Lock } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { useAuth } from "@/lib/auth-context";
 import { getApiErrorMessage } from "@/lib/api-client";
 
@@ -41,27 +36,43 @@ export default function LoginPage() {
       const kind = await login(phone, password);
       router.push(kind === "staff" ? "/staff/dashboard" : "/driver/dashboard");
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Telefon raqami yoki parol noto'g'ri"));
+      toast.error(
+        getApiErrorMessage(error, "Telefon raqami yoki parol noto'g'ri"),
+      );
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center p-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Lock className="size-5" />
+    <main className="login-atmosphere relative flex min-h-svh flex-1 flex-col items-center justify-center px-5 py-10">
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center gap-8">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="relative size-[7.5rem] overflow-hidden rounded-full border-[3px] border-[var(--brand-gold)] bg-[var(--brand-gold-soft)]">
+              <Image
+                src="/brand/sanjar-patir-mark.png"
+                alt=""
+                fill
+                className="object-cover"
+                priority
+                sizes="120px"
+              />
+            </div>
+            <span className="steam steam-1" aria-hidden />
+            <span className="steam steam-2" aria-hidden />
+            <span className="steam steam-3" aria-hidden />
           </div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Sanjar Patir
+          <BrandLogo variant="hero" animated />
+        </div>
+
+        <div className="login-panel w-full rounded-2xl border border-[var(--border)] bg-[rgb(255_253_248_/_0.92)] p-6 backdrop-blur-sm">
+          <h1 className="sr-only">Tizimga kirish</h1>
+          <p className="text-center text-sm text-muted-foreground">
+            Telefon va parol bilan kiring
           </p>
-          <CardTitle>Tizimga kirish</CardTitle>
-          <CardDescription>Haydovchilar sodiqlik va hamyon tizimi</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="phone">Telefon raqami</Label>
               <Input
@@ -72,6 +83,7 @@ export default function LoginPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
+                className="bg-white/80"
               />
             </div>
             <div className="space-y-2">
@@ -83,15 +95,27 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="bg-white/80"
               />
             </div>
-            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              className="w-full font-medium"
+              size="lg"
+              disabled={isSubmitting}
+            >
               {isSubmitting && <Loader2 className="animate-spin" />}
               Kirish
             </Button>
           </form>
-        </CardContent>
-      </Card>
+
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
+            Chrome: menyu → &quot;Ilovani o&apos;rnatish&quot; / &quot;Add to Home
+            screen&quot;. Pastdagi tugma chiqsa — shu orqali ham qo&apos;shish
+            mumkin. Ikonda Sanjar Patir logosi bo&apos;ladi.
+          </p>
+        </div>
+      </div>
     </main>
   );
 }

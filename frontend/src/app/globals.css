@@ -4,79 +4,72 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Sanjar Patir — warm crust / flour / gold (from brand mark) */
+  --brand-crust: #6b3a1f;
+  --brand-ember: #c45c26;
+  --brand-gold: #e8a83a;
+  --brand-gold-soft: #f6e2b0;
+  --brand-flour: #fff8ee;
+  --brand-ink: #2a1a12;
+  --brand-ink-muted: #7a5c48;
 
-  /* Brand accent used across the loyalty app (stamps/balance highlights) */
-  --success: oklch(0.63 0.17 149);
-  --success-foreground: oklch(0.985 0 0);
+  --radius: 0.75rem;
+  --background: var(--brand-flour);
+  --foreground: var(--brand-ink);
+  --card: #fffdf8;
+  --card-foreground: var(--brand-ink);
+  --popover: #fffdf8;
+  --popover-foreground: var(--brand-ink);
+  --primary: var(--brand-ember);
+  --primary-foreground: #fffaf3;
+  --secondary: #f3e4cf;
+  --secondary-foreground: var(--brand-crust);
+  --muted: #f0e6d6;
+  --muted-foreground: var(--brand-ink-muted);
+  --accent: #ffe7b8;
+  --accent-foreground: var(--brand-crust);
+  --destructive: oklch(0.55 0.2 25);
+  --border: #e6d3b8;
+  --input: #e8d8c0;
+  --ring: var(--brand-ember);
+  --chart-1: var(--brand-ember);
+  --chart-2: var(--brand-gold);
+  --chart-3: var(--brand-crust);
+  --chart-4: #d4923a;
+  --chart-5: #8b5a2b;
+  --sidebar: #fffaf2;
+  --sidebar-foreground: var(--brand-ink);
+  --sidebar-primary: var(--brand-ember);
+  --sidebar-primary-foreground: #fffaf3;
+  --sidebar-accent: #f3e4cf;
+  --sidebar-accent-foreground: var(--brand-crust);
+  --sidebar-border: #e6d3b8;
+  --sidebar-ring: var(--brand-ember);
+
+  --success: #2f8f55;
+  --success-foreground: #f4fff7;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-
-  --success: oklch(0.7 0.17 149);
-  --success-foreground: oklch(0.145 0 0);
+  /* Keep light bakery brand — no dark theme shift for this product. */
+  --background: var(--brand-flour);
+  --foreground: var(--brand-ink);
+  --card: #fffdf8;
+  --card-foreground: var(--brand-ink);
+  --popover: #fffdf8;
+  --popover-foreground: var(--brand-ink);
+  --primary: var(--brand-ember);
+  --primary-foreground: #fffaf3;
+  --secondary: #f3e4cf;
+  --secondary-foreground: var(--brand-crust);
+  --muted: #f0e6d6;
+  --muted-foreground: var(--brand-ink-muted);
+  --accent: #ffe7b8;
+  --accent-foreground: var(--brand-crust);
+  --destructive: oklch(0.55 0.2 25);
+  --border: #e6d3b8;
+  --input: #e8d8c0;
+  --ring: var(--brand-ember);
 }
 
 @theme inline {
@@ -117,7 +110,8 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -127,5 +121,158 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body), ui-sans-serif, sans-serif;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, #ffe7b8 0%, transparent 55%),
+      radial-gradient(circle at 100% 100%, #f3d9a8 0%, transparent 40%),
+      linear-gradient(180deg, #fff9f0 0%, var(--brand-flour) 40%, #f7ecda 100%);
+    background-attachment: fixed;
   }
+  .font-display {
+    font-family: var(--font-display), ui-serif, Georgia, serif;
+  }
+}
+
+/* ---------- Bakery motion ---------- */
+
+@keyframes patir-ring {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes chekich-ticks {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+@keyframes steam-rise {
+  0% {
+    transform: translateY(8px) scaleX(1);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(-28px) scaleX(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes stamp-in {
+  0% {
+    transform: translateY(-12px) scale(0.92);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(2px) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes dough-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.logo-mark-animated .logo-ring {
+  transform-origin: 32px 32px;
+  animation: patir-ring 3.2s ease-in-out infinite;
+}
+
+.logo-mark-animated .logo-ring-inner {
+  transform-origin: 32px 32px;
+  animation: patir-ring 3.2s ease-in-out infinite 0.35s;
+}
+
+.logo-mark-animated .logo-ticks {
+  transform-origin: 32px 32px;
+  animation: chekich-ticks 6s ease-in-out infinite;
+}
+
+.brand-hero-mark {
+  animation: stamp-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.brand-hero p:first-of-type {
+  animation: dough-fade 0.6s ease-out 0.15s both;
+}
+
+.brand-hero p:last-of-type {
+  animation: dough-fade 0.6s ease-out 0.28s both;
+}
+
+.steam {
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  width: 10px;
+  height: 18px;
+  margin-left: -5px;
+  border-radius: 999px;
+  background: linear-gradient(to top, transparent, rgb(255 255 255 / 0.7));
+  filter: blur(2px);
+  pointer-events: none;
+  animation: steam-rise 2.8s ease-out infinite;
+}
+
+.steam-1 {
+  margin-left: -18px;
+  animation-delay: 0s;
+}
+.steam-2 {
+  margin-left: -2px;
+  animation-delay: 0.7s;
+}
+.steam-3 {
+  margin-left: 14px;
+  animation-delay: 1.3s;
+}
+
+.login-panel {
+  animation: dough-fade 0.55s ease-out 0.2s both;
+}
+
+.login-atmosphere {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(circle at 20% 20%, #ffd98a88 0%, transparent 42%),
+    radial-gradient(circle at 80% 30%, #f0b45a55 0%, transparent 38%),
+    repeating-radial-gradient(
+      circle at 50% 120%,
+      transparent 0 18px,
+      rgb(107 58 31 / 0.04) 18px 19px
+    );
+  animation: patir-ring 12s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
 }
