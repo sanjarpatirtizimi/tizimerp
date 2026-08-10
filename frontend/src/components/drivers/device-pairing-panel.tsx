@@ -146,7 +146,9 @@ export function DevicePairingPanel({
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
           Faqat agent/ISAPI ishlamagan qurilmalar uchun. Asosiy yo&apos;l —
-          yuqoridagi &quot;Avtomatik yuz yuklash&quot;.
+          yuqoridagi &quot;Avtomatik yuz yuklash&quot;. Avval &quot;Boshlash&quot;,
+          keyin shu haydovchi qurilmaga qarasin — oldindan qaragan yuz
+          avtomatik bog&apos;lanmaydi.
         </p>
         {linked.length > 0 && (
           <ul className="space-y-2">
@@ -187,7 +189,8 @@ export function DevicePairingPanel({
                 {devices.find((d) => d.id === pending.deviceId)?.name ?? pending.deviceId}
               </p>
               <p className="text-xs text-muted-foreground">
-                Haydovchi yuzini shu qurilmaga tutishini kutmoqda —{" "}
+                Boshlashdan keyin haydovchi yuzini shu qurilmaga tutishini
+                kutmoqda —{" "}
                 {msToClock(new Date(pending.pairingExpiresAt!).getTime() - now)}
               </p>
             </div>
