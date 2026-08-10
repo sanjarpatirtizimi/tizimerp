@@ -68,6 +68,18 @@ export class DriversController {
     return this.driversService.requeueEnrollment(id, dto.deviceIds, user.sub);
   }
 
+  /** Upload or replace the durable face photo stored in the database. */
+  @Post(':id/photo')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  @UseInterceptors(FileInterceptor('photo'))
+  updatePhoto(
+    @Param('id') id: string,
+    @UploadedFile() photo: Express.Multer.File,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.driversService.updatePhoto(id, photo, user.sub);
+  }
+
   @Post(':id/manual-face-mapping')
   @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
   setManualFaceMapping(

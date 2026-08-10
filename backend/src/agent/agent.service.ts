@@ -31,7 +31,7 @@ export class AgentService {
         pairingExpiresAt: null,
         driver: {
           status: { not: DriverStatus.BLOCKED },
-          photoUrl: { not: null },
+          OR: [{ photoBytes: { not: null } }, { photoUrl: { not: null } }],
         },
       },
       include: { driver: true },
@@ -40,13 +40,16 @@ export class AgentService {
 
     const jobs: PendingEnrollmentJob[] = [];
     for (const r of registrations) {
-      if (!r.driver.photoUrl) continue;
+      const hasPhoto =
+        Boolean(r.driver.photoBytes?.length) || Boolean(r.driver.photoUrl);
+      if (!hasPhoto) continue;
       jobs.push({
         registrationId: r.id,
         driverId: r.driverId,
         employeeNo: r.driverId,
         fullName: r.driver.fullName,
-        photoUrl: r.driver.photoUrl,
+        // Always the durable DB-backed URL (survives Render redeploys).
+        photoUrl: `/api/public/driver-photos/${r.driverId}`,
       });
     }
     return jobs;

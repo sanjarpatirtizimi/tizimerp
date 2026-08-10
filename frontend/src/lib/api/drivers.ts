@@ -57,6 +57,17 @@ export const driversApi = {
       .post<Driver>(`/drivers/${id}/requeue-enrollment`, { deviceIds })
       .then((r) => r.data),
 
+  /** Upload/replace face photo (stored durably in the database). */
+  updatePhoto: (id: string, photo: File) => {
+    const form = new FormData();
+    form.append("photo", photo);
+    return apiClient
+      .post<Driver>(`/drivers/${id}/photo`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((r) => r.data);
+  },
+
   setStatus: (id: string, status: DriverStatus) =>
     apiClient.patch<Driver>(`/drivers/${id}/status`, { status }).then((r) => r.data),
 

@@ -2,7 +2,6 @@
 
 import { use, useEffect, useState } from "react";
 import { Car, Loader2, Phone } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +13,11 @@ import { GoodsExchangeDialog } from "@/components/drivers/goods-exchange-dialog"
 import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-dialog";
 import { DeviceEnrollmentPanel } from "@/components/drivers/device-enrollment-panel";
 import { DevicePairingPanel } from "@/components/drivers/device-pairing-panel";
+import { DriverPhotoButton } from "@/components/drivers/driver-photo-button";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAuth } from "@/lib/auth-context";
 import { driversApi } from "@/lib/api/drivers";
-import { API_URL } from "@/lib/api-client";
-import { driverStatusLabels, initials } from "@/lib/format";
+import { driverStatusLabels } from "@/lib/format";
 import type { Driver, DriverStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -27,8 +26,6 @@ const statusStyles: Record<DriverStatus, string> = {
   PENDING: "bg-amber-500/15 text-amber-600",
   BLOCKED: "bg-destructive/15 text-destructive",
 };
-
-const backendOrigin = API_URL.replace(/\/api\/?$/, "");
 
 export default function DriverDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -71,12 +68,10 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
       ) : (
         <Card>
           <CardContent className="flex items-center gap-4 py-2">
-            <Avatar className="size-14">
-              {driver.photoUrl && (
-                <AvatarImage src={`${backendOrigin}${driver.photoUrl}`} alt={driver.fullName} />
-              )}
-              <AvatarFallback>{initials(driver.fullName)}</AvatarFallback>
-            </Avatar>
+            <DriverPhotoButton
+              driver={driver}
+              onUpdated={(updated) => setDriver(updated)}
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{driver.fullName}</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -91,6 +86,9 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
                   </span>
                 )}
               </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Rasmni bosib yuklang/yangilang — bazada saqlanadi, o‘chib ketmaydi
+              </p>
             </div>
             <Badge className={cn(statusStyles[driver.status])} variant="outline">
               {driverStatusLabels[driver.status]}

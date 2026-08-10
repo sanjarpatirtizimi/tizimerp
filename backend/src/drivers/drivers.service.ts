@@ -54,9 +54,8 @@ export class DriversService {
       );
     }
 
-    let photoUrl: string | undefined;
     if (photo) {
-      photoUrl = await this.savePhoto(dto.phone, photo.buffer);
+      this.assertPhotoBuffer(photo.buffer);
     }
 
     const passwordHash = dto.password
@@ -71,10 +70,21 @@ export class DriversService {
         carPlate: dto.carPlate,
         carBrand: dto.carBrand,
         carModel: dto.carModel,
-        photoUrl,
+        photoBytes: photo ? new Uint8Array(photo.buffer) : undefined,
+        photoMimeType: photo ? this.mimeFromUpload(photo) : undefined,
         status: DriverStatus.PENDING,
       },
     });
+
+    // Stable public URL that is served from Postgres (not ephemeral disk).
+    if (photo) {
+      await this.prisma.driver.update({
+        where: { id: driver.id },
+        data: { photoUrl: this.publicPhotoPath(driver.id) },
+      });
+      // Also write a local cache copy for faster agent reads when disk exists.
+      await this.cachePhotoToDisk(driver.id, photo.buffer).catch(() => undefined);
+    }
 
     await this.auditService.log({
       userId: operatorId,
@@ -96,6 +106,84 @@ export class DriversService {
     return this.findOne(driver.id);
   }
 
+  /** Replace/upload the durable face photo for an existing driver. */
+  async updatePhoto(
+    driverId: string,
+    photo: Express.Multer.File,
+    operatorId: string,
+  ) {
+    this.assertPhotoBuffer(photo.buffer);
+    await this.findOne(driverId);
+
+    await this.prisma.driver.update({
+      where: { id: driverId },
+      data: {
+        photoBytes: new Uint8Array(photo.buffer),
+        photoMimeType: this.mimeFromUpload(photo),
+        photoUrl: this.publicPhotoPath(driverId),
+      },
+    });
+    await this.cachePhotoToDisk(driverId, photo.buffer).catch(() => undefined);
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_PHOTO_UPDATED',
+      entityType: 'Driver',
+      entityId: driverId,
+    });
+
+    return this.findOne(driverId);
+  }
+
+  /** Used by the public photo endpoint and by re-queue enrollment. */
+  async getStoredPhoto(driverId: string): Promise<{
+    buffer: Buffer;
+    mimeType: string;
+  }> {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+      select: {
+        id: true,
+        photoBytes: true,
+        photoMimeType: true,
+        photoUrl: true,
+      },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    if (driver.photoBytes && driver.photoBytes.length > 0) {
+      return {
+        buffer: Buffer.from(driver.photoBytes),
+        mimeType: driver.photoMimeType ?? 'image/jpeg',
+      };
+    }
+
+    // Legacy fallback: photo was only on disk before this change.
+    if (driver.photoUrl?.startsWith('/uploads/')) {
+      try {
+        const absolutePath = join(
+          process.cwd(),
+          driver.photoUrl.replace(/^\//, ''),
+        );
+        const buffer = await readFile(absolutePath);
+        // Backfill into DB so the next Render restart keeps it.
+        await this.prisma.driver.update({
+          where: { id: driverId },
+          data: {
+            photoBytes: new Uint8Array(buffer),
+            photoMimeType: 'image/jpeg',
+            photoUrl: this.publicPhotoPath(driverId),
+          },
+        });
+        return { buffer, mimeType: 'image/jpeg' };
+      } catch {
+        // fall through
+      }
+    }
+
+    throw new NotFoundException("Haydovchi rasmi topilmadi");
+  }
+
   /**
    * Re-queues face push for selected devices using the photo already stored
    * on the driver record. Person ID on the device is always `driver.id`.
@@ -111,21 +199,16 @@ export class DriversService {
 
     const driver = await this.prisma.driver.findUnique({
       where: { id: driverId },
+      select: { id: true, photoBytes: true, photoUrl: true },
     });
     if (!driver) throw new NotFoundException('Driver not found');
-    if (!driver.photoUrl) {
-      throw new BadRequestException(
-        "Haydovchida rasm yo'q — avval rasm yuklab qayta urinib ko'ring",
-      );
-    }
 
-    const absolutePath = join(process.cwd(), driver.photoUrl.replace(/^\//, ''));
     let photoBuffer: Buffer;
     try {
-      photoBuffer = await readFile(absolutePath);
+      photoBuffer = (await this.getStoredPhoto(driverId)).buffer;
     } catch {
       throw new BadRequestException(
-        "Saqlangan rasm fayli topilmadi — haydovchiga yangi rasm yuklang",
+        "Haydovchida rasm yo'q yoki yo'qolgan — haydovchi sahifasidan yangi rasm yuklang",
       );
     }
 
@@ -513,10 +596,11 @@ export class DriversService {
   }
 
   async findAll(status?: DriverStatus) {
-    return this.prisma.driver.findMany({
+    const drivers = await this.prisma.driver.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
     });
+    return drivers.map((d) => this.sanitizeDriver(d));
   }
 
   async findOne(id: string) {
@@ -525,7 +609,7 @@ export class DriversService {
       include: { deviceRegistrations: { include: { device: true } } },
     });
     if (!driver) throw new NotFoundException('Driver not found');
-    return driver;
+    return this.sanitizeDriver(driver);
   }
 
   async setStatus(id: string, status: DriverStatus, operatorId: string) {
@@ -543,7 +627,7 @@ export class DriversService {
       metadata: { status },
     });
 
-    return driver;
+    return this.sanitizeDriver(driver);
   }
 
   async getProfile(driverId: string) {
@@ -551,18 +635,43 @@ export class DriversService {
       where: { id: driverId },
     });
     if (!driver) throw new NotFoundException('Driver not found');
-    const rest: Partial<typeof driver> = { ...driver };
-    delete rest.passwordHash;
-    return rest;
+    return this.sanitizeDriver(driver);
   }
 
-  private async savePhoto(phone: string, buffer: Buffer): Promise<string> {
-    if (buffer.length === 0) {
+  private publicPhotoPath(driverId: string): string {
+    return `/api/public/driver-photos/${driverId}`;
+  }
+
+  private mimeFromUpload(photo: Express.Multer.File): string {
+    return photo.mimetype?.startsWith('image/')
+      ? photo.mimetype
+      : 'image/jpeg';
+  }
+
+  private assertPhotoBuffer(buffer: Buffer) {
+    if (!buffer?.length) {
       throw new BadRequestException('Uploaded photo is empty');
     }
+    if (buffer.length > 8 * 1024 * 1024) {
+      throw new BadRequestException('Rasm 8 MB dan katta bo‘lmasligi kerak');
+    }
+  }
+
+  private async cachePhotoToDisk(driverId: string, buffer: Buffer) {
     await mkdir(UPLOAD_DIR, { recursive: true });
-    const fileName = `${phone.replace(/[^\d]/g, '')}-${Date.now()}.jpg`;
-    await writeFile(join(UPLOAD_DIR, fileName), buffer);
-    return `/uploads/drivers/${fileName}`;
+    await writeFile(join(UPLOAD_DIR, `${driverId}.jpg`), buffer);
+  }
+
+  /** Never leak password hashes or raw photo bytes in JSON responses. */
+  private sanitizeDriver<T extends { passwordHash?: string | null; photoBytes?: Uint8Array | Buffer | null }>(
+    driver: T,
+  ): Omit<T, 'passwordHash' | 'photoBytes'> {
+    const clone = { ...driver } as T & {
+      passwordHash?: string | null;
+      photoBytes?: Uint8Array | Buffer | null;
+    };
+    delete clone.passwordHash;
+    delete clone.photoBytes;
+    return clone;
   }
 }
