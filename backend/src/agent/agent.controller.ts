@@ -44,7 +44,14 @@ export class AgentController {
     @Param('deviceId') deviceId: string,
     @Body() dto: AgentRecognitionBatchDto,
   ) {
-    const results = [];
+    const results: Array<{
+      employeeNo: string | undefined;
+      serialNo?: string;
+      status: string;
+      message: string;
+      transactionId?: string;
+    }> = [];
+
     for (const event of dto.events ?? []) {
       const employeeNo = String(event.employeeNo ?? '').trim();
       if (!employeeNo) {
