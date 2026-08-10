@@ -197,35 +197,40 @@ export class RecognitionService {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${driver.id}))`;
 
-        const cooldownMs =
-          this.appConfig.business.recognitionCooldownMinutes * 60 * 1000;
-        const cooldownStart = new Date(Date.now() - cooldownMs);
+        const cooldownMinutes =
+          this.appConfig.business.recognitionCooldownMinutes;
+        // 0 = cooldown off (useful while testing stamps)
+        if (cooldownMinutes > 0) {
+          const cooldownStart = new Date(
+            Date.now() - cooldownMinutes * 60 * 1000,
+          );
 
-        const recentStamp = await tx.recognitionEvent.findFirst({
-          where: {
-            driverId: driver.id,
-            status: RecognitionEventStatus.PROCESSED,
-            createdAt: { gte: cooldownStart },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-
-        if (recentStamp) {
-          await tx.recognitionEvent.create({
-            data: {
-              deviceId,
+          const recentStamp = await tx.recognitionEvent.findFirst({
+            where: {
               driverId: driver.id,
-              status: RecognitionEventStatus.IGNORED_COOLDOWN,
-              rawPayload,
-              employeeNoRaw: employeeNo,
-              eventDateTime: input.eventDateTime ?? undefined,
-              capturedPhotoUrl: input.capturedPhotoUrl,
+              status: RecognitionEventStatus.PROCESSED,
+              createdAt: { gte: cooldownStart },
             },
+            orderBy: { createdAt: 'desc' },
           });
-          return {
-            status: RecognitionEventStatus.IGNORED_COOLDOWN,
-            message: `Driver already stamped at ${recentStamp.createdAt.toISOString()}; within cooldown window`,
-          };
+
+          if (recentStamp) {
+            await tx.recognitionEvent.create({
+              data: {
+                deviceId,
+                driverId: driver.id,
+                status: RecognitionEventStatus.IGNORED_COOLDOWN,
+                rawPayload,
+                employeeNoRaw: employeeNo,
+                eventDateTime: input.eventDateTime ?? undefined,
+                capturedPhotoUrl: input.capturedPhotoUrl,
+              },
+            });
+            return {
+              status: RecognitionEventStatus.IGNORED_COOLDOWN,
+              message: `Driver already stamped at ${recentStamp.createdAt.toISOString()}; within cooldown window`,
+            };
+          }
         }
 
         const transaction = await tx.transaction.create({

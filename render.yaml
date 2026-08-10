@@ -27,7 +27,7 @@ services:
       - key: STAMP_AMOUNT_UZS
         value: "30000"
       - key: RECOGNITION_COOLDOWN_MINUTES
-        value: "60"
+        value: "0"
       - key: DEVICE_CREDENTIALS_ENC_KEY
         sync: false
       - key: HIKVISION_WEBHOOK_SECRET

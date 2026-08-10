@@ -22,7 +22,6 @@ function loadState() {
 }
 
 function saveState(state) {
-  // Cap memory so the file cannot grow forever.
   if (Array.isArray(state.seenKeys) && state.seenKeys.length > 2000) {
     state.seenKeys = state.seenKeys.slice(-1500);
   }
@@ -61,83 +60,138 @@ function pickEmployeeNo(row) {
   return null;
 }
 
-function toLocalIso(date) {
-  // Hikvision often wants local-looking timestamps without timezone.
-  const pad = (n) => String(n).padStart(2, "0");
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * Format an absolute Date in a fixed offset (device timezone), e.g. +08:00.
+ * Do NOT mix in the PC's getTimezoneOffset — that shifted the window by hours
+ * and made AcsEvent return NO MATCH even right after a face scan.
+ */
+function formatWithOffset(date, offsetMinutes) {
+  const local = new Date(date.getTime() + offsetMinutes * 60000);
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMinutes);
+  const oh = pad(Math.floor(abs / 60));
+  const om = pad(abs % 60);
   return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}` +
+    `T${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}` +
+    `${sign}${oh}:${om}`
   );
 }
 
 /**
+ * Read device clock so AcsEvent start/end match the terminal's timezone.
+ * Falls back to PC local offset if device time is unavailable.
+ */
+async function getDeviceTimeWindow(deviceClient, lookbackMs) {
+  let offsetMinutes = -new Date().getTimezoneOffset(); // PC local
+  let end = new Date();
+
+  try {
+    const res = await deviceClient.get("/ISAPI/System/time");
+    const xml = typeof res.data === "string" ? res.data : "";
+    const localMatch = xml.match(/<localTime>([^<]+)<\/localTime>/i);
+    if (localMatch) {
+      const raw = localMatch[1].trim();
+      // e.g. 2026-08-10T18:59:56+08:00
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) {
+        end = parsed;
+        const off = raw.match(/([+-])(\d{2}):(\d{2})$/);
+        if (off) {
+          const sign = off[1] === "-" ? -1 : 1;
+          offsetMinutes = sign * (parseInt(off[2], 10) * 60 + parseInt(off[3], 10));
+        }
+      }
+    }
+  } catch {
+    // keep PC clock fallback
+  }
+
+  const start = new Date(end.getTime() - lookbackMs);
+  return {
+    startTime: formatWithOffset(start, offsetMinutes),
+    endTime: formatWithOffset(end, offsetMinutes),
+  };
+}
+
+async function postAcsEvent(deviceClient, cond) {
+  return deviceClient.post("/ISAPI/AccessControl/AcsEvent?format=json", {
+    data: { AcsEventCond: cond },
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
  * Poll Face ID access events over LAN and return newly seen face matches.
- * This is the reliable stamp source — does not depend on device→cloud webhooks.
+ * This device requires `minor` (MessageParametersLack without it) and
+ * maxResults ≤ 30. Time window is taken from the device clock.
  */
 async function pollNewFaceEvents(deviceClient, log) {
   const state = loadState();
   const seen = new Set(state.seenKeys || []);
-
-  const end = new Date();
-  const start = new Date(end.getTime() - 3 * 60 * 1000); // last 3 minutes
-
-  const body = {
-    AcsEventCond: {
-      searchID: String(Date.now()),
-      searchResultPosition: 0,
-      maxResults: 50,
-      major: 5, // access controller event
-      // minor omitted: firmwares differ (75=face success, etc). Filter below.
-      startTime: toLocalIso(start),
-      endTime: toLocalIso(end),
-    },
-  };
-
-  let response = await deviceClient.post(
-    "/ISAPI/AccessControl/AcsEvent?format=json",
-    {
-      data: body,
-      headers: { "Content-Type": "application/json" },
-    },
+  const { startTime, endTime } = await getDeviceTimeWindow(
+    deviceClient,
+    15 * 60 * 1000,
   );
 
-  // Some firmwares only accept lowercase path.
-  if (response.status >= 400) {
-    response = await deviceClient.post(
-      "/ISAPI/AccessControl/AcsEvent?format=json",
-      {
-        data: {
-          AcsEventCond: {
-            ...body.AcsEventCond,
-            minor: 75,
-          },
-        },
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+  const base = {
+    searchID: "1",
+    searchResultPosition: 0,
+    maxResults: 30,
+    major: 5,
+    startTime,
+    endTime,
+  };
+
+  // This terminal requires minor. 75 = face auth success on most Hikvision AC units.
+  const minorsToTry = [75, 38]; // 75 face success, 38 card success (harmless if unused)
+  let rows = [];
+  let lastError = null;
+
+  for (const minor of minorsToTry) {
+    const response = await postAcsEvent(deviceClient, { ...base, minor });
+    if (response.status >= 400) {
+      lastError = `AcsEvent HTTP ${response.status} ${JSON.stringify(response.data).slice(0, 240)}`;
+      continue;
+    }
+    const list =
+      response.data?.AcsEvent?.InfoList ||
+      response.data?.AcsEvent?.infoList ||
+      response.data?.InfoList ||
+      [];
+    if (Array.isArray(list) && list.length) {
+      rows = rows.concat(list);
+    } else if (response.status < 400) {
+      lastError = null; // valid empty result
+    }
   }
 
-  if (response.status >= 400) {
-    throw new Error(
-      `AcsEvent HTTP ${response.status} ${JSON.stringify(response.data).slice(0, 240)}`,
-    );
+  if (lastError && rows.length === 0) {
+    // One more attempt: only minor=75 (required success path)
+    const response = await postAcsEvent(deviceClient, { ...base, minor: 75 });
+    if (response.status >= 400) {
+      throw new Error(
+        `AcsEvent HTTP ${response.status} ${JSON.stringify(response.data).slice(0, 240)}`,
+      );
+    }
+    const list =
+      response.data?.AcsEvent?.InfoList ||
+      response.data?.AcsEvent?.infoList ||
+      response.data?.InfoList ||
+      [];
+    rows = Array.isArray(list) ? list : [];
   }
 
-  const list =
-    response.data?.AcsEvent?.InfoList ||
-    response.data?.AcsEvent?.infoList ||
-    response.data?.InfoList ||
-    [];
-
-  const rows = Array.isArray(list) ? list : [];
   const fresh = [];
-
   for (const row of rows) {
     const minor = Number(row.minor ?? row.Minor ?? 0);
     const employeeNo = pickEmployeeNo(row);
     if (!employeeNo) continue;
-    // 76 = face authentication failure on many firmwares.
-    if (minor === 76) continue;
+    if (minor === 76) continue; // face fail
 
     const event = {
       employeeNo,
@@ -161,7 +215,7 @@ async function pollNewFaceEvents(deviceClient, log) {
   saveState(state);
 
   if (fresh.length > 0) {
-    log(`AcsEvent: ${fresh.length} ta yangi yuz voqeasi`);
+    log(`AcsEvent: ${fresh.length} ta yangi yuz voqeasi (${startTime} → ${endTime})`);
   }
   return fresh;
 }
@@ -183,7 +237,6 @@ async function flushOutbox(api, deviceId, log) {
   const outbox = loadOutbox();
   if (!outbox.length) return;
 
-  // Send in small batches.
   const batch = outbox.slice(0, 40);
   try {
     const { data } = await api.post(
@@ -203,7 +256,6 @@ async function flushOutbox(api, deviceId, log) {
         log(`  · ${r.status}: Person ID ${r.employeeNo} — ${r.message}`);
       }
     }
-    // Drop successfully posted batch (server accepted the HTTP call).
     saveOutbox(outbox.slice(batch.length));
   } catch (error) {
     const message = error.response

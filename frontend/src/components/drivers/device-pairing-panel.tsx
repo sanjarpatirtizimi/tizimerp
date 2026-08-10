@@ -166,9 +166,8 @@ export function DevicePairingPanel({
             Saqlash
           </Button>
           <p className="text-[11px] text-muted-foreground">
-            Muhim: Face ID HTTP Listening URL ichidagi qurilma ID dasturdagi
-            Qurilma ID bilan bir xil bo&apos;lishi kerak (yuqorida ko&apos;rsatilgan).
-            Pechat 60 daqiqada bir marta yoziladi.
+            Person ID Face ID ekranidagi raqam bilan bir xil bo&apos;lishi kerak.
+            Relay-agent ishlayotgan bo&apos;lsa, yuz tanilganda pechat yoziladi.
           </p>
         </div>
 
