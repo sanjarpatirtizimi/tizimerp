@@ -127,6 +127,14 @@ export interface Product {
   updatedAt: string;
 }
 
+export interface TransactionRedFlag {
+  id: string;
+  isRedFlagged: boolean;
+  flagNote: string | null;
+  flaggedAt: string | null;
+  flaggedBy: { id: string; fullName: string } | null;
+}
+
 export interface Transaction {
   id: string;
   driverId: string;
@@ -141,6 +149,8 @@ export interface Transaction {
   product: { id: string; name: string } | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
+  /** Present for STAMP rows linked to a recognition visit. */
+  recognitionEvent?: TransactionRedFlag | null;
 }
 
 export interface DriverBalanceSummary {

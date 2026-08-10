@@ -101,6 +101,15 @@ export class LedgerService {
           operator: { select: { id: true, fullName: true } },
           device: { select: { id: true, name: true } },
           product: { select: { id: true, name: true } },
+          recognitionEvent: {
+            select: {
+              id: true,
+              isRedFlagged: true,
+              flagNote: true,
+              flaggedAt: true,
+              flaggedBy: { select: { id: true, fullName: true } },
+            },
+          },
         },
       }),
       this.prisma.transaction.count({ where: { driverId } }),
