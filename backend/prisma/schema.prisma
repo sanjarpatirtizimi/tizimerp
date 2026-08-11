@@ -59,6 +59,13 @@ enum TransactionType {
   CASH_ADVANCE // - amount, manual, issued by an Operator
   GOODS_EXCHANGE // - amount, manual, issued by an Operator (linked to a Product)
   MANUAL_ADJUSTMENT // +/- amount, manual correction by SuperAdmin (requires reason)
+  STAMP_REDEMPTION // - amount when pechat(lar) yechiladi (pul / mahsulot / boshqa)
+}
+
+enum StampRedeemKind {
+  CASH // pulga
+  GOODS // mahsulotga
+  OTHER // boshqa
 }
 
 enum RecognitionEventStatus {
@@ -91,6 +98,7 @@ model User {
 
   // Transactions this user issued as an operator (advances, exchanges, adjustments)
   issuedTransactions Transaction[]  @relation("TransactionOperator")
+  redeemedStamps     Transaction[]  @relation("StampRedeemedBy")
   auditLogs          AuditLog[]
   refreshTokens      RefreshToken[]
   flaggedVisits      RecognitionEvent[] @relation("VisitFlaggedBy")
@@ -299,10 +307,10 @@ model Product {
 // THE LEDGER — single source of truth for every driver's balance
 // ----------------------------------------------------------------------------
 
-/// Immutable, append-only ledger. NEVER UPDATE OR DELETE ROWS HERE.
-/// A driver's current balance = SUM(amount) WHERE driverId = X.
-/// A driver's total accumulated points = SUM(amount) WHERE driverId = X AND
-/// type = 'STAMP' (i.e. lifetime earnings, ignoring spend).
+/// Ledger: amounts are append-only (never change amount/type after insert).
+/// Exception: STAMP rows may get redemption metadata (redeemedAt…) for UI —
+/// money movement for pechat yechish is a separate STAMP_REDEMPTION insert.
+/// Balance = SUM(amount). Lifetime stamps = SUM where type = STAMP.
 model Transaction {
   id       String          @id @default(cuid())
   driverId String
@@ -310,18 +318,25 @@ model Transaction {
   type     TransactionType
 
   // Positive for STAMP / positive MANUAL_ADJUSTMENT.
-  // Negative for CASH_ADVANCE / GOODS_EXCHANGE / negative MANUAL_ADJUSTMENT.
+  // Negative for CASH_ADVANCE / GOODS_EXCHANGE / STAMP_REDEMPTION / negative MANUAL_ADJUSTMENT.
   amount Decimal @db.Decimal(14, 2)
 
   description String?
 
   // Who/what caused this transaction (mutually context-dependent, all nullable):
-  operatorId String? // set for CASH_ADVANCE, GOODS_EXCHANGE, MANUAL_ADJUSTMENT
+  operatorId String? // set for CASH_ADVANCE, GOODS_EXCHANGE, MANUAL_ADJUSTMENT, STAMP_REDEMPTION
   operator   User?    @relation("TransactionOperator", fields: [operatorId], references: [id])
   deviceId   String? // set for STAMP (which gate triggered it)
   device     Device?  @relation(fields: [deviceId], references: [id])
   productId  String? // set for GOODS_EXCHANGE
   product    Product? @relation(fields: [productId], references: [id])
+
+  /// Set on STAMP rows when pechat yechiladi (visual + audit; amount stays +30000).
+  redeemedAt   DateTime?
+  redeemedById String?
+  redeemedBy   User?           @relation("StampRedeemedBy", fields: [redeemedById], references: [id])
+  redeemKind   StampRedeemKind?
+  redeemNote   String?
 
   metadata  Json? // free-form extra data (e.g. { "tireSize": "R15", "qty": 4 })
   createdAt DateTime @default(now())
@@ -330,6 +345,7 @@ model Transaction {
 
   @@index([driverId, createdAt])
   @@index([type, createdAt])
+  @@index([driverId, type, redeemedAt])
   @@map("transactions")
 }
 

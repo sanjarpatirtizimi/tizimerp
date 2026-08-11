@@ -6,7 +6,10 @@ export type TransactionType =
   | "STAMP"
   | "CASH_ADVANCE"
   | "GOODS_EXCHANGE"
-  | "MANUAL_ADJUSTMENT";
+  | "MANUAL_ADJUSTMENT"
+  | "STAMP_REDEMPTION";
+
+export type StampRedeemKind = "CASH" | "GOODS" | "OTHER";
 
 export interface TokenPair {
   accessToken: string;
@@ -147,6 +150,12 @@ export interface Transaction {
   device: { id: string; name: string } | null;
   productId: string | null;
   product: { id: string; name: string } | null;
+  /** Set when a STAMP pechat has been redeemed. */
+  redeemedAt?: string | null;
+  redeemedById?: string | null;
+  redeemedBy?: { id: string; fullName: string } | null;
+  redeemKind?: StampRedeemKind | null;
+  redeemNote?: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
   /** Present for STAMP rows linked to a recognition visit. */
@@ -159,6 +168,8 @@ export interface DriverBalanceSummary {
   totalStampPoints: string;
   totalCashAdvances: string;
   totalGoodsExchanged: string;
+  /** Unredeemed STAMP count (available for pechat yechish). */
+  availableStampCount?: number;
 }
 
 export interface PaginatedTransactions {

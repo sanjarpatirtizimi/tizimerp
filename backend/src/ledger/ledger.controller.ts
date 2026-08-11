@@ -12,6 +12,7 @@ import { LedgerService } from './ledger.service';
 import { CashAdvanceDto } from './dto/cash-advance.dto';
 import { GoodsExchangeDto } from './dto/goods-exchange.dto';
 import { ManualAdjustmentDto } from './dto/manual-adjustment.dto';
+import { RedeemStampsDto } from './dto/redeem-stamps.dto';
 import { JwtStaffGuard } from '../common/guards/jwt-staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -85,6 +86,22 @@ export class LedgerController {
       adminId: user.sub,
       amount: dto.amount,
       reason: dto.reason,
+    });
+  }
+
+  @Post('stamp-redemptions')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  redeemStamps(
+    @Param('driverId') driverId: string,
+    @Body() dto: RedeemStampsDto,
+    @CurrentUser() user: StaffJwtPayload,
+  ) {
+    return this.ledgerService.redeemStamps({
+      driverId,
+      operatorId: user.sub,
+      count: dto.count,
+      kind: dto.kind,
+      note: dto.note,
     });
   }
 }

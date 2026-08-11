@@ -1,5 +1,9 @@
 import { apiClient } from "../api-client";
-import type { DriverBalanceSummary, PaginatedTransactions } from "../types";
+import type {
+  DriverBalanceSummary,
+  PaginatedTransactions,
+  StampRedeemKind,
+} from "../types";
 
 export const ledgerApi = {
   getDriverBalance: (driverId: string) =>
@@ -29,6 +33,16 @@ export const ledgerApi = {
 
   manualAdjustment: (driverId: string, amount: number, reason: string) =>
     apiClient.post(`/drivers/${driverId}/adjustments`, { amount, reason }).then((r) => r.data),
+
+  redeemStamps: (
+    driverId: string,
+    count: number,
+    kind: StampRedeemKind,
+    note?: string,
+  ) =>
+    apiClient
+      .post(`/drivers/${driverId}/stamp-redemptions`, { count, kind, note })
+      .then((r) => r.data),
 
   // Driver self-service
   getMyBalance: () => apiClient.get<DriverBalanceSummary>("/me/balance").then((r) => r.data),

@@ -24,6 +24,7 @@ import { TransactionList } from "@/components/wallet/transaction-list";
 import { CashAdvanceDialog } from "@/components/drivers/cash-advance-dialog";
 import { GoodsExchangeDialog } from "@/components/drivers/goods-exchange-dialog";
 import { ManualAdjustmentDialog } from "@/components/drivers/manual-adjustment-dialog";
+import { RedeemStampsDialog } from "@/components/drivers/redeem-stamps-dialog";
 import { DevicePairingPanel } from "@/components/drivers/device-pairing-panel";
 import { DriverPhotoButton } from "@/components/drivers/driver-photo-button";
 import { EditDriverDialog } from "@/components/drivers/edit-driver-dialog";
@@ -141,9 +142,14 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
         <BalanceCard summary={summary} />
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <CashAdvanceDialog driverId={id} onSuccess={refresh} />
         <GoodsExchangeDialog driverId={id} onSuccess={refresh} />
+        <RedeemStampsDialog
+          driverId={id}
+          availableStampCount={summary?.availableStampCount ?? 0}
+          onSuccess={refresh}
+        />
       </div>
 
       {driver && <DevicePairingPanel driver={driver} onChanged={loadDriver} />}
