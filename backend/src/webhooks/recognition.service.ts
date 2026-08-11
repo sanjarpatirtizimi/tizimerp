@@ -199,38 +199,41 @@ export class RecognitionService {
 
         const cooldownMinutes =
           this.appConfig.business.recognitionCooldownMinutes;
-        // 0 = cooldown off (useful while testing stamps)
-        if (cooldownMinutes > 0) {
-          const cooldownStart = new Date(
-            Date.now() - cooldownMinutes * 60 * 1000,
-          );
+        // Always block burst doubles (one glance → 2–3 AcsEvent serials).
+        // Business cooldown (minutes) still applies when > 0.
+        const burstGuardMs = 10_000;
+        const cooldownMs =
+          cooldownMinutes > 0
+            ? cooldownMinutes * 60 * 1000
+            : 0;
+        const guardMs = Math.max(burstGuardMs, cooldownMs);
+        const guardStart = new Date(Date.now() - guardMs);
 
-          const recentStamp = await tx.recognitionEvent.findFirst({
-            where: {
+        const recentStamp = await tx.recognitionEvent.findFirst({
+          where: {
+            driverId: driver.id,
+            status: RecognitionEventStatus.PROCESSED,
+            createdAt: { gte: guardStart },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (recentStamp) {
+          await tx.recognitionEvent.create({
+            data: {
+              deviceId,
               driverId: driver.id,
-              status: RecognitionEventStatus.PROCESSED,
-              createdAt: { gte: cooldownStart },
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-
-          if (recentStamp) {
-            await tx.recognitionEvent.create({
-              data: {
-                deviceId,
-                driverId: driver.id,
-                status: RecognitionEventStatus.IGNORED_COOLDOWN,
-                rawPayload,
-                employeeNoRaw: employeeNo,
-                eventDateTime: input.eventDateTime ?? undefined,
-                capturedPhotoUrl: input.capturedPhotoUrl,
-              },
-            });
-            return {
               status: RecognitionEventStatus.IGNORED_COOLDOWN,
-              message: `Driver already stamped at ${recentStamp.createdAt.toISOString()}; within cooldown window`,
-            };
-          }
+              rawPayload,
+              employeeNoRaw: employeeNo,
+              eventDateTime: input.eventDateTime ?? undefined,
+              capturedPhotoUrl: input.capturedPhotoUrl,
+            },
+          });
+          return {
+            status: RecognitionEventStatus.IGNORED_COOLDOWN,
+            message: `Driver already stamped at ${recentStamp.createdAt.toISOString()}; within ${Math.round(guardMs / 1000)}s guard`,
+          };
         }
 
         const transaction = await tx.transaction.create({

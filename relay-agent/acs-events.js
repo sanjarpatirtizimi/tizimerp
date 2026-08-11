@@ -17,13 +17,28 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
 }
 
+/** Same face often creates 2–3 AcsEvent serials — collapse within this window. */
+const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 12_000;
+
 function loadState() {
-  return readJson(STATE_PATH, { seenKeys: [], lastPollAt: null });
+  return readJson(STATE_PATH, {
+    seenKeys: [],
+    lastPersonAt: {},
+    lastPollAt: null,
+  });
 }
 
 function saveState(state) {
   if (Array.isArray(state.seenKeys) && state.seenKeys.length > 2000) {
     state.seenKeys = state.seenKeys.slice(-1500);
+  }
+  if (state.lastPersonAt && typeof state.lastPersonAt === "object") {
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    for (const [person, ts] of Object.entries(state.lastPersonAt)) {
+      if (typeof ts !== "number" || ts < cutoff) {
+        delete state.lastPersonAt[person];
+      }
+    }
   }
   writeJson(STATE_PATH, state);
 }
@@ -230,7 +245,22 @@ async function pollNewFaceEvents(deviceClient, log) {
       skippedSeen += 1;
       continue;
     }
+
+    // Hikvision often emits multiple serials for one glance — keep first only.
+    const lastPersonAt =
+      state.lastPersonAt && typeof state.lastPersonAt === "object"
+        ? state.lastPersonAt
+        : {};
+    const prevAt = Number(lastPersonAt[employeeNo] || 0);
+    if (prevAt && Date.now() - prevAt < PERSON_DEBOUNCE_MS) {
+      skippedSeen += 1;
+      seen.add(key); // mark serial seen so it does not reappear later
+      continue;
+    }
+
     seen.add(key);
+    lastPersonAt[employeeNo] = Date.now();
+    state.lastPersonAt = lastPersonAt;
     fresh.push(event);
   }
 
