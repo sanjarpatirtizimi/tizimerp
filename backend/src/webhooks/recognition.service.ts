@@ -199,16 +199,19 @@ export class RecognitionService {
 
         const cooldownMinutes =
           this.appConfig.business.recognitionCooldownMinutes;
-        // Global per-driver guard (all Face ID gates share this):
-        // - burst: one glance / walking between gates must not double-pay
-        // - optional business cooldown in minutes when env > 0
-        const burstGuardMs = 30_000;
+        // Global guard across ALL Face ID gates for the same person/driver.
+        // Default 60s so walking 1 → 2 → 1 cannot pay twice.
+        const burstGuardMs = Math.max(
+          60_000,
+          parseInt(process.env.RECOGNITION_BURST_GUARD_MS ?? '60000', 10) ||
+            60_000,
+        );
         const cooldownMs =
           cooldownMinutes > 0 ? cooldownMinutes * 60 * 1000 : 0;
         const guardMs = Math.max(burstGuardMs, cooldownMs);
         const guardStart = new Date(Date.now() - guardMs);
 
-        // Prefer ledger STAMP rows — source of truth for "already paid".
+        // 1) Ledger: any STAMP for this driver in the window
         const recentLedgerStamp = await tx.transaction.findFirst({
           where: {
             driverId: driver.id,
@@ -219,7 +222,19 @@ export class RecognitionService {
           select: { id: true, createdAt: true, deviceId: true },
         });
 
-        if (recentLedgerStamp) {
+        // 2) Same Hikvision Person ID already processed (covers device-id drift)
+        const recentPersonStamp = await tx.recognitionEvent.findFirst({
+          where: {
+            employeeNoRaw: employeeNo,
+            status: RecognitionEventStatus.PROCESSED,
+            createdAt: { gte: guardStart },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, createdAt: true, deviceId: true, driverId: true },
+        });
+
+        const blockedBy = recentLedgerStamp ?? recentPersonStamp;
+        if (blockedBy) {
           await tx.recognitionEvent.create({
             data: {
               deviceId,
@@ -231,9 +246,13 @@ export class RecognitionService {
               capturedPhotoUrl: input.capturedPhotoUrl,
             },
           });
+          const when =
+            'createdAt' in blockedBy
+              ? blockedBy.createdAt.toISOString()
+              : new Date().toISOString();
           return {
             status: RecognitionEventStatus.IGNORED_COOLDOWN,
-            message: `Driver already stamped at ${recentLedgerStamp.createdAt.toISOString()} (device ${recentLedgerStamp.deviceId ?? '—'}); within ${Math.round(guardMs / 1000)}s global guard`,
+            message: `Already stamped at ${when} (device ${blockedBy.deviceId ?? '—'}); within ${Math.round(guardMs / 1000)}s global guard`,
           };
         }
 

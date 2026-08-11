@@ -18,7 +18,7 @@ function writeJson(file, value) {
 }
 
 /** Same face often creates 2–3 AcsEvent serials — collapse within this window. */
-const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 30_000;
+const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 60_000;
 
 function loadState() {
   return readJson(STATE_PATH, {
