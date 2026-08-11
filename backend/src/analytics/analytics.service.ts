@@ -72,6 +72,31 @@ interface InactiveDriverRow {
   neverVisited: boolean;
 }
 
+export interface DailyAnalyticsReport {
+  period: { from: string; to: string; label: string; date: string };
+  summary: {
+    stampCount: number;
+    stampPoints: string;
+    cashAdvances: string;
+    cashAdvanceCount: number;
+    goodsExchanged: string;
+    goodsCount: number;
+    stampRedemptions: string;
+    stampRedemptionCount: number;
+    driversWhoVisited: number;
+  };
+  /** Chronological stamp visits for the day — simple list for staff. */
+  visits: Array<{
+    id: string;
+    driverId: string;
+    fullName: string;
+    phone: string;
+    carPlate: string | null;
+    amount: string;
+    createdAt: string;
+  }>;
+}
+
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -165,6 +190,142 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * Simple day report (Uzbekistan calendar day, UTC+5).
+   */
+  async getDailyReport(date?: string): Promise<DailyAnalyticsReport> {
+    const { from, to, label, dateKey } = this.resolveDay(date);
+
+    const [
+      stampAgg,
+      cashAgg,
+      goodsAgg,
+      redeemAgg,
+      stampCount,
+      cashCount,
+      goodsCount,
+      redeemCount,
+      driversWhoVisited,
+      stampTxs,
+    ] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        where: {
+          type: TransactionType.STAMP,
+          createdAt: { gte: from, lt: to },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: {
+          type: TransactionType.CASH_ADVANCE,
+          createdAt: { gte: from, lt: to },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: {
+          type: TransactionType.GOODS_EXCHANGE,
+          createdAt: { gte: from, lt: to },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: {
+          type: TransactionType.STAMP_REDEMPTION,
+          createdAt: { gte: from, lt: to },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          type: TransactionType.STAMP,
+          createdAt: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          type: TransactionType.CASH_ADVANCE,
+          createdAt: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          type: TransactionType.GOODS_EXCHANGE,
+          createdAt: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          type: TransactionType.STAMP_REDEMPTION,
+          createdAt: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['driverId'],
+        where: {
+          type: TransactionType.STAMP,
+          createdAt: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          type: TransactionType.STAMP,
+          createdAt: { gte: from, lt: to },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          driverId: true,
+          amount: true,
+          createdAt: true,
+          driver: {
+            select: {
+              fullName: true,
+              phone: true,
+              carPlate: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      period: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        label,
+        date: dateKey,
+      },
+      summary: {
+        stampCount,
+        stampPoints: (stampAgg._sum.amount ?? new Prisma.Decimal(0)).toString(),
+        cashAdvances: (cashAgg._sum.amount ?? new Prisma.Decimal(0))
+          .abs()
+          .toString(),
+        cashAdvanceCount: cashCount,
+        goodsExchanged: (goodsAgg._sum.amount ?? new Prisma.Decimal(0))
+          .abs()
+          .toString(),
+        goodsCount,
+        stampRedemptions: (redeemAgg._sum.amount ?? new Prisma.Decimal(0))
+          .abs()
+          .toString(),
+        stampRedemptionCount: redeemCount,
+        driversWhoVisited: driversWhoVisited.length,
+      },
+      visits: stampTxs.map((tx) => ({
+        id: tx.id,
+        driverId: tx.driverId,
+        fullName: tx.driver.fullName,
+        phone: tx.driver.phone,
+        carPlate: tx.driver.carPlate,
+        amount: tx.amount.toString(),
+        createdAt: tx.createdAt.toISOString(),
+      })),
+    };
+  }
+
   private resolvePeriod(month?: string): {
     from: Date;
     to: Date;
@@ -195,6 +356,30 @@ export class AnalyticsService {
       to,
       label: `${year}-${String(monthNum).padStart(2, '0')}`,
     };
+  }
+
+  /** Calendar day in Uzbekistan (UTC+5). `date` = YYYY-MM-DD. */
+  private resolveDay(date?: string): {
+    from: Date;
+    to: Date;
+    label: string;
+    dateKey: string;
+  } {
+    let dateKey: string;
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      dateKey = date;
+    } else {
+      const now = new Date();
+      const uz = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+      dateKey = `${uz.getUTCFullYear()}-${String(uz.getUTCMonth() + 1).padStart(2, '0')}-${String(uz.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    const from = new Date(`${dateKey}T00:00:00+05:00`);
+    const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
+    const [y, m, d] = dateKey.split('-');
+    const label = `${d}.${m}.${y}`;
+
+    return { from, to, label, dateKey };
   }
 
   private async monthlyAggregates(from: Date, to: Date) {

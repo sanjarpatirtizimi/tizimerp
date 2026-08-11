@@ -15,4 +15,9 @@ export class AnalyticsController {
   getDashboard(@Query('month') month?: string) {
     return this.analyticsService.getDashboard(month);
   }
+
+  @Get('daily')
+  getDaily(@Query('date') date?: string) {
+    return this.analyticsService.getDailyReport(date);
+  }
 }

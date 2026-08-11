@@ -5,21 +5,26 @@ import Link from "next/link";
 import {
   BarChart3,
   CalendarClock,
+  CalendarDays,
   Coins,
   Package,
+  Stamp,
   TrendingDown,
   TrendingUp,
   Users,
   Wallet,
+  CircleMinus,
 } from "lucide-react";
 import { RequireStaff } from "@/components/auth/route-guard";
 import { SuperAdminHubGrid } from "@/components/layout/super-admin-hub-grid";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   analyticsApi,
   type AnalyticsDashboard,
+  type DailyAnalyticsReport,
   type DriverBalanceRow,
   type DriverVisitRow,
   type InactiveDriverRow,
@@ -28,11 +33,19 @@ import {
 import { formatDateTime, formatUzs } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type StatsTab = "monthly" | "daily";
+
 function currentMonthValue() {
   const now = new Date();
   // Approximate UZ business month selector (UTC+5)
   const uz = new Date(now.getTime() + 5 * 60 * 60 * 1000);
   return `${uz.getUTCFullYear()}-${String(uz.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function currentDayValue() {
+  const now = new Date();
+  const uz = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  return `${uz.getUTCFullYear()}-${String(uz.getUTCMonth() + 1).padStart(2, "0")}-${String(uz.getUTCDate()).padStart(2, "0")}`;
 }
 
 function monthOptions(count = 12) {
@@ -60,6 +73,17 @@ function absenceLabel(days: number | null, neverVisited: boolean) {
   return `${days} kun`;
 }
 
+function formatClock(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("uz-UZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Tashkent",
+  });
+}
+
 export default function AnalyticsPage() {
   return (
     <RequireStaff roles={["SUPER_ADMIN"]}>
@@ -69,12 +93,17 @@ export default function AnalyticsPage() {
 }
 
 function AnalyticsPageContent() {
+  const [tab, setTab] = useState<StatsTab>("monthly");
   const [month, setMonth] = useState(currentMonthValue);
+  const [day, setDay] = useState(currentDayValue);
   const [data, setData] = useState<AnalyticsDashboard | null>(null);
+  const [daily, setDaily] = useState<DailyAnalyticsReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [dailyLoading, setDailyLoading] = useState(true);
   const options = useMemo(() => monthOptions(12), []);
 
   useEffect(() => {
+    if (tab !== "monthly") return;
     let cancelled = false;
     setIsLoading(true);
     analyticsApi
@@ -88,20 +117,225 @@ function AnalyticsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, tab]);
+
+  useEffect(() => {
+    if (tab !== "daily") return;
+    let cancelled = false;
+    setDailyLoading(true);
+    analyticsApi
+      .daily(day)
+      .then((res) => {
+        if (!cancelled) setDaily(res);
+      })
+      .finally(() => {
+        if (!cancelled) setDailyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [day, tab]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4">
       <SuperAdminHubGrid />
 
-      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[var(--border)] pt-5">
+      <div className="space-y-3 border-t border-[var(--border)] pt-5">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-semibold">
             <BarChart3 className="size-5" />
             Statistika
           </h1>
           <p className="text-sm text-muted-foreground">
-            Faqat bosh administrator uchun oylik hisobot va reytinglar
+            Oylik va kunlik hisobotlar
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/40 p-1">
+          <button
+            type="button"
+            onClick={() => setTab("monthly")}
+            className={cn(
+              "flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              tab === "monthly"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <CalendarDays className="size-4" />
+            Oylik hisobot
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("daily")}
+            className={cn(
+              "flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              tab === "daily"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <CalendarClock className="size-4" />
+            Kunlik hisobot
+          </button>
+        </div>
+      </div>
+
+      {tab === "monthly" ? (
+        <MonthlyReport
+          month={month}
+          setMonth={setMonth}
+          options={options}
+          data={data}
+          isLoading={isLoading}
+        />
+      ) : (
+        <DailyReport
+          day={day}
+          setDay={setDay}
+          data={daily}
+          isLoading={dailyLoading}
+        />
+      )}
+    </div>
+  );
+}
+
+function DailyReport({
+  day,
+  setDay,
+  data,
+  isLoading,
+}: {
+  day: string;
+  setDay: (v: string) => void;
+  data: DailyAnalyticsReport | null;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Kunlik hisobot</h2>
+          <p className="text-xs text-muted-foreground">
+            Oddiy kunlik ko‘rsatkichlar
+          </p>
+        </div>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Sana
+          <Input
+            type="date"
+            className="h-9 w-auto"
+            value={day}
+            onChange={(e) => setDay(e.target.value)}
+          />
+        </label>
+      </div>
+
+      {isLoading || !data ? (
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : (
+        <>
+          <p className="text-sm font-medium text-muted-foreground">
+            {data.period.label}
+          </p>
+
+          <section className="grid grid-cols-2 gap-3">
+            <StatTile
+              icon={Stamp}
+              label="Pechatlar"
+              value={String(data.summary.stampCount)}
+              hint={`${data.summary.driversWhoVisited} haydovchi`}
+            />
+            <StatTile
+              icon={Coins}
+              label="Ballar"
+              value={formatUzs(data.summary.stampPoints)}
+            />
+            <StatTile
+              icon={Wallet}
+              label="Avanslar"
+              value={formatUzs(data.summary.cashAdvances)}
+              hint={`${data.summary.cashAdvanceCount} ta`}
+            />
+            <StatTile
+              icon={Package}
+              label="Mahsulotlar"
+              value={formatUzs(data.summary.goodsExchanged)}
+              hint={`${data.summary.goodsCount} ta`}
+            />
+            <StatTile
+              icon={CircleMinus}
+              label="Pechat yechish"
+              value={formatUzs(data.summary.stampRedemptions)}
+              hint={`${data.summary.stampRedemptionCount} ta`}
+              className="col-span-2"
+            />
+          </section>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                Bugun kelganlar ({data.visits.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 pb-3">
+              {data.visits.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Bu kunda pechat yo‘q
+                </p>
+              ) : (
+                data.visits.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-3 rounded-md px-1 py-2.5 hover:bg-muted/50"
+                  >
+                    <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg bg-muted text-[10px] font-semibold leading-tight text-muted-foreground">
+                      <span>{formatClock(row.createdAt)}</span>
+                    </div>
+                    <DriverLink
+                      id={row.driverId}
+                      name={row.fullName}
+                      meta={[row.phone, row.carPlate].filter(Boolean).join(" · ")}
+                    />
+                    <span className="shrink-0 text-sm font-semibold text-emerald-700">
+                      +{formatUzs(row.amount)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MonthlyReport({
+  month,
+  setMonth,
+  options,
+  data,
+  isLoading,
+}: {
+  month: string;
+  setMonth: (v: string) => void;
+  options: string[];
+  data: AnalyticsDashboard | null;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Oylik hisobot</h2>
+          <p className="text-xs text-muted-foreground">
+            Reytinglar va oylik yig‘indi
           </p>
         </div>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
