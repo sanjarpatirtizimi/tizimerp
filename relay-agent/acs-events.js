@@ -17,8 +17,20 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
 }
 
-/** Same face often creates 2–3 AcsEvent serials — collapse within this window. */
-const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 60_000;
+/** Same person: no second pechat within this window (default 3 hours). */
+const PERSON_DEBOUNCE_MS =
+  Number(process.env.PERSON_DEBOUNCE_MS) || 3 * 60 * 60 * 1000;
+
+function formatWait(ms) {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return m > 0 ? `${h} soat ${m} daqiqa` : `${h} soat`;
+  }
+  if (sec >= 60) return `${Math.ceil(sec / 60)} daqiqa`;
+  return `${sec}s`;
+}
 
 function loadState() {
   return readJson(STATE_PATH, {
@@ -223,6 +235,8 @@ async function pollNewFaceEvents(deviceClient, log) {
 
   const fresh = [];
   let skippedSeen = 0;
+  let skippedDebounce = 0;
+  let lastDebouncedPerson = null;
   for (const row of rows) {
     const minor = Number(row.minor ?? row.Minor ?? 0);
     const employeeNo = pickEmployeeNo(row);
@@ -253,7 +267,8 @@ async function pollNewFaceEvents(deviceClient, log) {
         : {};
     const prevAt = Number(lastPersonAt[employeeNo] || 0);
     if (prevAt && Date.now() - prevAt < PERSON_DEBOUNCE_MS) {
-      skippedSeen += 1;
+      skippedDebounce += 1;
+      lastDebouncedPerson = employeeNo;
       seen.add(key); // mark serial seen so it does not reappear later
       continue;
     }
@@ -271,13 +286,33 @@ async function pollNewFaceEvents(deviceClient, log) {
     log(
       `AcsEvent: ${fresh.length} ta YANGI yuz (${total} jami oynada) ${startTime} → ${endTime}`,
     );
-  } else if (total > 0 && skippedSeen > 0) {
-    // Device has events but none are new — usually means a second face touch
-    // did not create a new AcsEvent serial (device-side interval/optimization).
-    const lastSkip = state.lastSkipLogAt ? Date.parse(state.lastSkipLogAt) : 0;
-    if (Date.now() - lastSkip > 60_000) {
+  } else if (skippedDebounce > 0) {
+    // Face matched again inside debounce — say so (throttled).
+    const lastDeb = state.lastDebounceLogAt
+      ? Date.parse(state.lastDebounceLogAt)
+      : 0;
+    if (Date.now() - lastDeb > 8_000) {
+      const leftMs = Math.max(
+        0,
+        PERSON_DEBOUNCE_MS -
+          (Date.now() -
+            Number(
+              (state.lastPersonAt &&
+                state.lastPersonAt[lastDebouncedPerson]) ||
+                Date.now(),
+            )),
+      );
       log(
-        `AcsEvent: yangi serial yo'q (qurilmada ${total} ta eski voqea). Yuzdan keyin pechat ~bir necha soniyada keladi.`,
+        `  · kutish: Person ID ${lastDebouncedPerson ?? "?"} — pechat yaqinda berilgan, ~${formatWait(leftMs || PERSON_DEBOUNCE_MS)} ichida qayta pechat yo'q`,
+      );
+      state.lastDebounceLogAt = new Date().toISOString();
+    }
+  } else if (total > 0 && skippedSeen > 0) {
+    // Device UI may show "success" but no NEW AcsEvent serial yet.
+    const lastSkip = state.lastSkipLogAt ? Date.parse(state.lastSkipLogAt) : 0;
+    if (Date.now() - lastSkip > 8_000) {
+      log(
+        `  · qurilma yuzni ko'rsatishi mumkin, lekin YANGI serial yo'q — pechat yuborilmaydi (Face ID interval/sozlama). Keyingi yangi serialda pechat keladi.`,
       );
       state.lastSkipLogAt = new Date().toISOString();
     }
