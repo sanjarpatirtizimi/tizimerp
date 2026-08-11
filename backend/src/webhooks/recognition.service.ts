@@ -200,14 +200,11 @@ export class RecognitionService {
         const cooldownMinutes =
           this.appConfig.business.recognitionCooldownMinutes;
         // Global guard across ALL Face ID gates for the same person/driver.
-        // Default 3 hours so one pechat per visit window (1 → 2 → 1).
-        const threeHoursMs = 3 * 60 * 60 * 1000;
+        // Default 60s so walking 1 → 2 → 1 cannot pay twice.
         const burstGuardMs = Math.max(
-          threeHoursMs,
-          parseInt(
-            process.env.RECOGNITION_BURST_GUARD_MS ?? String(threeHoursMs),
-            10,
-          ) || threeHoursMs,
+          60_000,
+          parseInt(process.env.RECOGNITION_BURST_GUARD_MS ?? '60000', 10) ||
+            60_000,
         );
         const cooldownMs =
           cooldownMinutes > 0 ? cooldownMinutes * 60 * 1000 : 0;

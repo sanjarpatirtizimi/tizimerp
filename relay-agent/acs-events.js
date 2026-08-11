@@ -17,9 +17,8 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
 }
 
-/** Same person: no second pechat within this window (default 3 hours). */
-const PERSON_DEBOUNCE_MS =
-  Number(process.env.PERSON_DEBOUNCE_MS) || 3 * 60 * 60 * 1000;
+/** Same face often creates 2–3 AcsEvent serials — collapse within this window. */
+const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 60_000;
 
 function formatWait(ms) {
   const sec = Math.max(0, Math.ceil(ms / 1000));
