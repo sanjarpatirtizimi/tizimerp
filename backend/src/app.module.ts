@@ -17,6 +17,7 @@ import { AgentModule } from './agent/agent.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { VisitsModule } from './visits/visits.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { AdsModule } from './ads/ads.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     AnalyticsModule,
     VisitsModule,
     FeedbackModule,
+    AdsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

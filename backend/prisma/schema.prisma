@@ -102,6 +102,7 @@ model User {
   auditLogs          AuditLog[]
   refreshTokens      RefreshToken[]
   flaggedVisits      RecognitionEvent[] @relation("VisitFlaggedBy")
+  createdAds         Ad[]               @relation("AdCreatedBy")
 
   @@index([role])
   @@map("users")
@@ -135,6 +136,7 @@ model Driver {
   otpCodes            OtpCode[]
   refreshTokens       RefreshToken[]
   feedback            DriverFeedback[]
+  adDismissals        AdDismissal[]
 
   @@index([status])
   @@index([phone])
@@ -301,6 +303,52 @@ model Product {
   transactions Transaction[]
 
   @@map("products")
+}
+
+// ----------------------------------------------------------------------------
+// IN-APP ADS — SuperAdmin campaigns shown to drivers on app entry
+// ----------------------------------------------------------------------------
+
+/// Promo / reklama shown as a dismissible popup when a driver opens the app.
+model Ad {
+  id               String   @id @default(cuid())
+  title            String
+  body             String?
+  phone            String?
+  telegramUsername String?
+  linkUrl          String?
+  /// Public path e.g. /api/public/ad-images/:id (set after image upload).
+  imageUrl         String?
+  imageBytes       Bytes?
+  imageMimeType    String?  @default("image/jpeg")
+  startsAt         DateTime
+  endsAt           DateTime
+  /// Optional 1–100; null = 100% (all drivers). Stable hash(adId+driverId).
+  audiencePercent  Int?
+  isActive         Boolean  @default(true)
+  createdById      String?
+  createdBy        User?    @relation("AdCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dismissals AdDismissal[]
+
+  @@index([isActive, startsAt, endsAt])
+  @@map("ads")
+}
+
+/// Driver closed an ad with X — do not show that ad again to them.
+model AdDismissal {
+  id         String   @id @default(cuid())
+  adId       String
+  ad         Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  dismissedAt DateTime @default(now())
+
+  @@unique([adId, driverId])
+  @@index([driverId])
+  @@map("ad_dismissals")
 }
 
 // ----------------------------------------------------------------------------

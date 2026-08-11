@@ -13,6 +13,7 @@ import {
   BarChart3,
   Clock3,
   Flag,
+  Megaphone,
   MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ const sideNavAll = [
 
 const sideNavSuperAdmin = [
   { href: "/staff/analytics", label: "Statistika", icon: BarChart3 },
+  { href: "/staff/ads", label: "Reklamalar", icon: Megaphone },
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/users", label: "Operatorlar", icon: UserCog },
 ];

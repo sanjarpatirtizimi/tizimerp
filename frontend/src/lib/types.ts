@@ -178,3 +178,37 @@ export interface PaginatedTransactions {
   page: number;
   pageSize: number;
 }
+
+export interface Ad {
+  id: string;
+  title: string;
+  body: string | null;
+  phone: string | null;
+  telegramUsername: string | null;
+  linkUrl: string | null;
+  imageUrl: string | null;
+  startsAt: string;
+  endsAt: string;
+  audiencePercent: number | null;
+  isActive: boolean;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: { id: string; fullName: string } | null;
+  dismissalsCount?: number;
+}
+
+/** Driver-facing ad payload (same fields, no staff metadata required). */
+export type DriverAd = Pick<
+  Ad,
+  | "id"
+  | "title"
+  | "body"
+  | "phone"
+  | "telegramUsername"
+  | "linkUrl"
+  | "imageUrl"
+  | "startsAt"
+  | "endsAt"
+>;
+
