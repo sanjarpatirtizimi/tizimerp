@@ -18,7 +18,7 @@ function writeJson(file, value) {
 }
 
 /** Same face often creates 2–3 AcsEvent serials — collapse within this window. */
-const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 12_000;
+const PERSON_DEBOUNCE_MS = Number(process.env.PERSON_DEBOUNCE_MS) || 30_000;
 
 function loadState() {
   return readJson(STATE_PATH, {
@@ -317,7 +317,7 @@ async function flushOutbox(api, deviceId, log) {
         log(`  ✓ pechat: Person ID ${r.employeeNo} (${r.message})`);
       } else if (r.status === "IGNORED_COOLDOWN") {
         log(
-          `  · SERVER COOLDOWN: Person ID ${r.employeeNo} — Render'da RECOGNITION_COOLDOWN_MINUTES=0 qiling. ${r.message || ""}`,
+          `  · takroriy e'tiborsiz: Person ID ${r.employeeNo} — bir qarashda 2-chi voqea (yoki cooldown). ${r.message || ""}`,
         );
       } else if (String(r.message || "").includes("Duplicate")) {
         log(`  · duplicate (shu serial oldin yozilgan): Person ID ${r.employeeNo}`);

@@ -199,26 +199,27 @@ export class RecognitionService {
 
         const cooldownMinutes =
           this.appConfig.business.recognitionCooldownMinutes;
-        // Always block burst doubles (one glance → 2–3 AcsEvent serials).
-        // Business cooldown (minutes) still applies when > 0.
-        const burstGuardMs = 10_000;
+        // Global per-driver guard (all Face ID gates share this):
+        // - burst: one glance / walking between gates must not double-pay
+        // - optional business cooldown in minutes when env > 0
+        const burstGuardMs = 30_000;
         const cooldownMs =
-          cooldownMinutes > 0
-            ? cooldownMinutes * 60 * 1000
-            : 0;
+          cooldownMinutes > 0 ? cooldownMinutes * 60 * 1000 : 0;
         const guardMs = Math.max(burstGuardMs, cooldownMs);
         const guardStart = new Date(Date.now() - guardMs);
 
-        const recentStamp = await tx.recognitionEvent.findFirst({
+        // Prefer ledger STAMP rows — source of truth for "already paid".
+        const recentLedgerStamp = await tx.transaction.findFirst({
           where: {
             driverId: driver.id,
-            status: RecognitionEventStatus.PROCESSED,
+            type: TransactionType.STAMP,
             createdAt: { gte: guardStart },
           },
           orderBy: { createdAt: 'desc' },
+          select: { id: true, createdAt: true, deviceId: true },
         });
 
-        if (recentStamp) {
+        if (recentLedgerStamp) {
           await tx.recognitionEvent.create({
             data: {
               deviceId,
@@ -232,7 +233,7 @@ export class RecognitionService {
           });
           return {
             status: RecognitionEventStatus.IGNORED_COOLDOWN,
-            message: `Driver already stamped at ${recentStamp.createdAt.toISOString()}; within ${Math.round(guardMs / 1000)}s guard`,
+            message: `Driver already stamped at ${recentLedgerStamp.createdAt.toISOString()} (device ${recentLedgerStamp.deviceId ?? '—'}); within ${Math.round(guardMs / 1000)}s global guard`,
           };
         }
 
