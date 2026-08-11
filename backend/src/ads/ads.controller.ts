@@ -65,4 +65,23 @@ export class AdsController {
   ) {
     return this.adsService.uploadImage(id, file, user.sub);
   }
+
+  @Post(':id/slides')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  addSlide(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: StaffJwtPayload,
+    @Body() body: { title?: string; body?: string },
+  ) {
+    return this.adsService.addSlide(id, file, user.sub, {
+      title: body?.title,
+      body: body?.body,
+    });
+  }
 }

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -11,8 +12,13 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { AdKind } from '@prisma/client';
 
 export class CreateAdDto {
+  @IsEnum(AdKind)
+  @IsOptional()
+  kind?: AdKind;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)

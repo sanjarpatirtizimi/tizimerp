@@ -68,6 +68,11 @@ enum StampRedeemKind {
   OTHER // boshqa
 }
 
+enum AdKind {
+  POPUP // modal, dismissible
+  SLIDESHOW // non-blocking top carousel (min 2 images)
+}
+
 enum RecognitionEventStatus {
   PROCESSED // resulted in a new STAMP transaction
   IGNORED_COOLDOWN // same driver recognized again within cooldown window
@@ -309,15 +314,17 @@ model Product {
 // IN-APP ADS — SuperAdmin campaigns shown to drivers on app entry
 // ----------------------------------------------------------------------------
 
-/// Promo / reklama shown as a dismissible popup when a driver opens the app.
+/// Promo / reklama shown as a dismissible popup when a driver opens the app,
+/// or as a non-blocking top slideshow banner.
 model Ad {
   id               String   @id @default(cuid())
+  kind             AdKind   @default(POPUP)
   title            String
   body             String?
   phone            String?
   telegramUsername String?
   linkUrl          String?
-  /// Public path e.g. /api/public/ad-images/:id (set after image upload).
+  /// Public path e.g. /api/public/ad-images/:id (POPUP single image).
   imageUrl         String?
   imageBytes       Bytes?
   imageMimeType    String?  @default("image/jpeg")
@@ -332,18 +339,37 @@ model Ad {
   updatedAt        DateTime @updatedAt
 
   dismissals AdDismissal[]
+  slides     AdSlide[]
 
   @@index([isActive, startsAt, endsAt])
+  @@index([kind, isActive, startsAt, endsAt])
   @@map("ads")
+}
+
+/// One frame in a SLIDESHOW ad (image + optional caption overrides).
+model AdSlide {
+  id            String  @id @default(cuid())
+  adId          String
+  ad            Ad      @relation(fields: [adId], references: [id], onDelete: Cascade)
+  sortOrder     Int     @default(0)
+  title         String?
+  body          String?
+  imageUrl      String?
+  imageBytes    Bytes?
+  imageMimeType String? @default("image/jpeg")
+  createdAt     DateTime @default(now())
+
+  @@index([adId, sortOrder])
+  @@map("ad_slides")
 }
 
 /// Driver closed an ad with X — do not show that ad again to them.
 model AdDismissal {
-  id         String   @id @default(cuid())
-  adId       String
-  ad         Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
-  driverId   String
-  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
   dismissedAt DateTime @default(now())
 
   @@unique([adId, driverId])

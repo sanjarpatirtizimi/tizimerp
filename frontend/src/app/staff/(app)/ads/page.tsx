@@ -11,6 +11,7 @@ import {
   Phone,
   ExternalLink,
   Send,
+  Images,
 } from "lucide-react";
 import { RequireStaff } from "@/components/auth/route-guard";
 import { Badge } from "@/components/ui/badge";
@@ -27,12 +28,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { adsApi } from "@/lib/api/ads";
 import { formatDateTime } from "@/lib/format";
 import { mediaUrl } from "@/lib/media-url";
-import type { Ad } from "@/lib/types";
+import type { Ad, AdKind } from "@/lib/types";
 
 export default function AdsPage() {
   return (
@@ -54,6 +62,7 @@ function AdsPageContent() {
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
 
+  const [kind, setKind] = useState<AdKind>("POPUP");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [phone, setPhone] = useState("");
@@ -63,6 +72,7 @@ function AdsPageContent() {
   const [endsAt, setEndsAt] = useState("");
   const [audiencePercent, setAudiencePercent] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [slideFiles, setSlideFiles] = useState<File[]>([]);
 
   function loadAds() {
     adsApi
@@ -75,6 +85,7 @@ function AdsPageContent() {
   useEffect(loadAds, []);
 
   function resetForm() {
+    setKind("POPUP");
     setTitle("");
     setBody("");
     setPhone("");
@@ -84,12 +95,17 @@ function AdsPageContent() {
     setEndsAt("");
     setAudiencePercent("");
     setImageFile(null);
+    setSlideFiles([]);
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!startsAt || !endsAt) {
       toast.error("Boshlanish va tugash vaqtini kiriting");
+      return;
+    }
+    if (kind === "SLIDESHOW" && slideFiles.length < 2) {
+      toast.error("Slaydli reklama uchun kamida 2 ta rasm kerak");
       return;
     }
     const percent = audiencePercent.trim()
@@ -106,6 +122,7 @@ function AdsPageContent() {
     setIsSubmitting(true);
     try {
       const created = await adsApi.create({
+        kind,
         title: title.trim(),
         body: body.trim() || undefined,
         phone: phone.trim() || undefined,
@@ -115,8 +132,13 @@ function AdsPageContent() {
         endsAt: fromLocalInputValue(endsAt),
         audiencePercent: percent,
       });
-      if (imageFile) {
+      if (kind === "POPUP" && imageFile) {
         await adsApi.uploadImage(created.id, imageFile);
+      }
+      if (kind === "SLIDESHOW") {
+        for (const file of slideFiles) {
+          await adsApi.addSlide(created.id, file);
+        }
       }
       toast.success("Reklama qo‘yildi");
       setOpen(false);
@@ -158,6 +180,25 @@ function AdsPageContent() {
     }
   }
 
+  async function handleAddSlides(id: string, files: FileList | null) {
+    if (!files?.length) return;
+    setUploadingId(id);
+    try {
+      let updated: Ad | null = null;
+      for (const file of Array.from(files)) {
+        updated = await adsApi.addSlide(id, file);
+      }
+      if (updated) {
+        setAds((prev) => prev.map((ad) => (ad.id === id ? { ...ad, ...updated } : ad)));
+      }
+      toast.success("Slayd(lar) qo‘shildi");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Slayd yuklab bo‘lmadi"));
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <div className="flex items-center justify-between gap-2">
@@ -182,6 +223,25 @@ function AdsPageContent() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
+                  <Label>Turi</Label>
+                  <Select
+                    value={kind}
+                    onValueChange={(v) => setKind(v as AdKind)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="POPUP">
+                        Popup (ekranni to‘sadi, X bilan yopiladi)
+                      </SelectItem>
+                      <SelectItem value="SLIDESHOW">
+                        Slayd (tepada aylanadi, to‘smaydi)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="ad-title">Sarlavha</Label>
                   <Input
                     id="ad-title"
@@ -201,15 +261,40 @@ function AdsPageContent() {
                     placeholder="Shafyorlarga ko‘rinadigan matn"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ad-image">Rasm</Label>
-                  <Input
-                    id="ad-image"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
+                {kind === "POPUP" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="ad-image">Rasm</Label>
+                    <Input
+                      id="ad-image"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) =>
+                        setImageFile(e.target.files?.[0] ?? null)
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="ad-slides">
+                      Slayd rasmlari (kamida 2 ta)
+                    </Label>
+                    <Input
+                      id="ad-slides"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) =>
+                        setSlideFiles(Array.from(e.target.files ?? []))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Tanlangan: {slideFiles.length} ta
+                      {slideFiles.length > 0 && slideFiles.length < 2
+                        ? " — yana rasm qo‘shing"
+                        : ""}
+                    </p>
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="ad-phone">Telefon</Label>
@@ -276,10 +361,6 @@ function AdsPageContent() {
                     value={audiencePercent}
                     onChange={(e) => setAudiencePercent(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    30 qo‘ysangiz, barcha shafyorlarning taxminan 30%iga
-                    ko‘rinadi (bir xil shafyor doim bir xil guruhda).
-                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -305,21 +386,24 @@ function AdsPageContent() {
       ) : (
         <ul className="space-y-3">
           {ads.map((ad) => {
-            const img = mediaUrl(ad.imageUrl);
+            const thumb =
+              mediaUrl(ad.imageUrl) ||
+              mediaUrl(ad.slides?.[0]?.imageUrl ?? null);
             const now = Date.now();
             const start = new Date(ad.startsAt).getTime();
             const end = new Date(ad.endsAt).getTime();
             const live = ad.isActive && start <= now && now < end;
+            const slideCount = ad.slides?.length ?? 0;
             return (
               <li key={ad.id}>
                 <Card>
                   <CardContent className="space-y-3 py-4">
                     <div className="flex items-start gap-3">
                       <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                        {img ? (
+                        {thumb ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={img}
+                            src={thumb}
                             alt=""
                             className="size-full object-cover"
                           />
@@ -330,12 +414,17 @@ function AdsPageContent() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">{ad.title}</p>
+                          <Badge variant="secondary">
+                            {ad.kind === "SLIDESHOW" ? "Slayd" : "Popup"}
+                          </Badge>
                           {live ? (
                             <Badge className="bg-success/15 text-success">
                               Faol
                             </Badge>
                           ) : ad.isActive ? (
-                            <Badge variant="secondary">Kutilmoqda / tugagan</Badge>
+                            <Badge variant="secondary">
+                              Kutilmoqda / tugagan
+                            </Badge>
                           ) : (
                             <Badge variant="outline">O‘chirilgan</Badge>
                           )}
@@ -346,13 +435,16 @@ function AdsPageContent() {
                           </p>
                         )}
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {formatDateTime(ad.startsAt)} → {formatDateTime(ad.endsAt)}
+                          {formatDateTime(ad.startsAt)} →{" "}
+                          {formatDateTime(ad.endsAt)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Auditoriya: {ad.audiencePercent ?? 100}%
-                          {typeof ad.dismissalsCount === "number"
-                            ? ` · yopilgan: ${ad.dismissalsCount}`
-                            : ""}
+                          {ad.kind === "SLIDESHOW"
+                            ? ` · slaydlar: ${slideCount}`
+                            : typeof ad.dismissalsCount === "number"
+                              ? ` · yopilgan: ${ad.dismissalsCount}`
+                              : ""}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                           {ad.phone && (
@@ -376,25 +468,51 @@ function AdsPageContent() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <label className="inline-flex cursor-pointer">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="sr-only"
-                          onChange={(e) => {
-                            void handleImageReplace(ad.id, e.target.files?.[0]);
-                            e.target.value = "";
-                          }}
-                        />
-                        <span className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent">
-                          {uploadingId === ad.id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <ImagePlus className="size-4" />
-                          )}
-                          Rasm
-                        </span>
-                      </label>
+                      {ad.kind === "POPUP" ? (
+                        <label className="inline-flex cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="sr-only"
+                            onChange={(e) => {
+                              void handleImageReplace(
+                                ad.id,
+                                e.target.files?.[0],
+                              );
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent">
+                            {uploadingId === ad.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <ImagePlus className="size-4" />
+                            )}
+                            Rasm
+                          </span>
+                        </label>
+                      ) : (
+                        <label className="inline-flex cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="sr-only"
+                            onChange={(e) => {
+                              void handleAddSlides(ad.id, e.target.files);
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent">
+                            {uploadingId === ad.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Images className="size-4" />
+                            )}
+                            Slayd qo‘shish
+                          </span>
+                        </label>
+                      )}
                       {ad.isActive && (
                         <Button
                           type="button"

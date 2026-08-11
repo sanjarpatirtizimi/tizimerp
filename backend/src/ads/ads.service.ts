@@ -3,14 +3,27 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AdKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateAdDto } from './dto/create-ad.dto';
 import { UpdateAdDto } from './dto/update-ad.dto';
 
-type AdRow = {
+type SlideRow = {
   id: string;
+  adId: string;
+  sortOrder: number;
+  title: string | null;
+  body: string | null;
+  imageUrl: string | null;
+  imageBytes?: Uint8Array | Buffer | null;
+  imageMimeType: string | null;
+  createdAt: Date;
+};
+
+type AdWithSlides = {
+  id: string;
+  kind: AdKind;
   title: string;
   body: string | null;
   phone: string | null;
@@ -26,6 +39,7 @@ type AdRow = {
   createdById: string | null;
   createdAt: Date;
   updatedAt: Date;
+  slides?: SlideRow[];
 };
 
 /**
@@ -67,8 +81,11 @@ export class AdsService {
       );
     }
 
+    const kind = dto.kind ?? AdKind.POPUP;
+
     const ad = await this.prisma.ad.create({
       data: {
+        kind,
         title: dto.title.trim(),
         body: dto.body?.trim() || null,
         phone: dto.phone?.trim() || null,
@@ -79,6 +96,7 @@ export class AdsService {
         audiencePercent: dto.audiencePercent ?? null,
         createdById,
       },
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
     });
 
     await this.auditService.log({
@@ -87,6 +105,7 @@ export class AdsService {
       entityType: 'Ad',
       entityId: ad.id,
       metadata: {
+        kind: ad.kind,
         title: ad.title,
         startsAt: ad.startsAt.toISOString(),
         endsAt: ad.endsAt.toISOString(),
@@ -102,6 +121,7 @@ export class AdsService {
       orderBy: { createdAt: 'desc' },
       include: {
         createdBy: { select: { id: true, fullName: true } },
+        slides: { orderBy: { sortOrder: 'asc' } },
         _count: { select: { dismissals: true } },
       },
     });
@@ -140,7 +160,11 @@ export class AdsService {
     }
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
 
-    const ad = await this.prisma.ad.update({ where: { id }, data });
+    const ad = await this.prisma.ad.update({
+      where: { id },
+      data,
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
+    });
 
     await this.auditService.log({
       userId,
@@ -160,6 +184,7 @@ export class AdsService {
     const ad = await this.prisma.ad.update({
       where: { id },
       data: { isActive: false },
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
     });
 
     await this.auditService.log({
@@ -178,6 +203,11 @@ export class AdsService {
     }
     const existing = await this.prisma.ad.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Reklama topilmadi');
+    if (existing.kind === AdKind.SLIDESHOW) {
+      throw new BadRequestException(
+        'Slaydli reklama uchun /slides orqali kamida 2 ta rasm yuklang',
+      );
+    }
 
     const mimeType = file.mimetype?.startsWith('image/')
       ? file.mimetype
@@ -191,6 +221,7 @@ export class AdsService {
         imageMimeType: mimeType,
         imageUrl,
       },
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
     });
 
     await this.auditService.log({
@@ -202,6 +233,64 @@ export class AdsService {
     });
 
     return this.toPublic(ad);
+  }
+
+  async addSlide(
+    adId: string,
+    file: Express.Multer.File,
+    userId: string,
+    opts?: { title?: string; body?: string },
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Rasm fayli kerak');
+    }
+    const ad = await this.prisma.ad.findUnique({
+      where: { id: adId },
+      include: { slides: true },
+    });
+    if (!ad) throw new NotFoundException('Reklama topilmadi');
+    if (ad.kind !== AdKind.SLIDESHOW) {
+      throw new BadRequestException(
+        'Faqat slaydli reklamalarga slayd qo‘shiladi',
+      );
+    }
+
+    const sortOrder =
+      ad.slides.reduce((max, s) => Math.max(max, s.sortOrder), -1) + 1;
+    const mimeType = file.mimetype?.startsWith('image/')
+      ? file.mimetype
+      : 'image/jpeg';
+
+    const slide = await this.prisma.adSlide.create({
+      data: {
+        adId,
+        sortOrder,
+        title: opts?.title?.trim() || null,
+        body: opts?.body?.trim() || null,
+        imageBytes: new Uint8Array(file.buffer),
+        imageMimeType: mimeType,
+      },
+    });
+
+    const imageUrl = `/api/public/ad-slide-images/${slide.id}`;
+    await this.prisma.adSlide.update({
+      where: { id: slide.id },
+      data: { imageUrl },
+    });
+
+    await this.auditService.log({
+      userId,
+      action: 'AD_SLIDE_ADDED',
+      entityType: 'Ad',
+      entityId: adId,
+      metadata: { slideId: slide.id, sortOrder },
+    });
+
+    const refreshed = await this.prisma.ad.findUniqueOrThrow({
+      where: { id: adId },
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
+    });
+    return this.toPublic(refreshed);
   }
 
   async getStoredImage(id: string): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -218,9 +307,24 @@ export class AdsService {
     };
   }
 
+  async getStoredSlideImage(
+    slideId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string }> {
+    const slide = await this.prisma.adSlide.findUnique({
+      where: { id: slideId },
+      select: { imageBytes: true, imageMimeType: true },
+    });
+    if (!slide?.imageBytes || slide.imageBytes.length === 0) {
+      throw new NotFoundException('Slayd rasmi topilmadi');
+    }
+    return {
+      buffer: Buffer.from(slide.imageBytes),
+      mimeType: slide.imageMimeType || 'image/jpeg',
+    };
+  }
+
   /**
-   * One active, in-window, non-dismissed ad for this driver (audience %).
-   * Newest first.
+   * Active POPUP (dismissible) + SLIDESHOW (banner) for this driver.
    */
   async getActiveForDriver(driverId: string) {
     const now = new Date();
@@ -229,16 +333,39 @@ export class AdsService {
         isActive: true,
         startsAt: { lte: now },
         endsAt: { gt: now },
-        dismissals: { none: { driverId } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 40,
+      take: 60,
+      include: { slides: { orderBy: { sortOrder: 'asc' } } },
     });
 
-    const match = candidates.find((ad) =>
+    const inAudience = candidates.filter((ad) =>
       isInAudience(ad.id, driverId, ad.audiencePercent),
     );
-    return match ? this.toPublic(match) : null;
+
+    const dismissed = await this.prisma.adDismissal.findMany({
+      where: {
+        driverId,
+        adId: { in: inAudience.map((a) => a.id) },
+      },
+      select: { adId: true },
+    });
+    const dismissedIds = new Set(dismissed.map((d) => d.adId));
+
+    const popup = inAudience.find(
+      (ad) => ad.kind === AdKind.POPUP && !dismissedIds.has(ad.id),
+    );
+    const slideshow = inAudience.find(
+      (ad) =>
+        ad.kind === AdKind.SLIDESHOW &&
+        (ad.slides?.filter((s) => s.imageBytes?.length || s.imageUrl).length ??
+          0) >= 2,
+    );
+
+    return {
+      popup: popup ? this.toPublic(popup) : null,
+      slideshow: slideshow ? this.toPublic(slideshow) : null,
+    };
   }
 
   async dismissForDriver(adId: string, driverId: string) {
@@ -260,16 +387,33 @@ export class AdsService {
     return trimmed || null;
   }
 
-  private toPublic(ad: AdRow) {
+  private toPublic(ad: AdWithSlides) {
     const hasImage = Boolean(ad.imageBytes?.length || ad.imageUrl);
+    const slides = (ad.slides ?? []).map((s) => {
+      const slideHasImage = Boolean(s.imageBytes?.length || s.imageUrl);
+      return {
+        id: s.id,
+        sortOrder: s.sortOrder,
+        title: s.title,
+        body: s.body,
+        imageUrl: slideHasImage
+          ? s.imageUrl ?? `/api/public/ad-slide-images/${s.id}`
+          : null,
+      };
+    });
+
     return {
       id: ad.id,
+      kind: ad.kind,
       title: ad.title,
       body: ad.body,
       phone: ad.phone,
       telegramUsername: ad.telegramUsername,
       linkUrl: ad.linkUrl,
-      imageUrl: hasImage ? ad.imageUrl ?? `/api/public/ad-images/${ad.id}` : null,
+      imageUrl: hasImage
+        ? ad.imageUrl ?? `/api/public/ad-images/${ad.id}`
+        : null,
+      slides,
       startsAt: ad.startsAt,
       endsAt: ad.endsAt,
       audiencePercent: ad.audiencePercent,

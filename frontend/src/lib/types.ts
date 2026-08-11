@@ -179,14 +179,26 @@ export interface PaginatedTransactions {
   pageSize: number;
 }
 
+export interface AdSlide {
+  id: string;
+  sortOrder: number;
+  title: string | null;
+  body: string | null;
+  imageUrl: string | null;
+}
+
+export type AdKind = "POPUP" | "SLIDESHOW";
+
 export interface Ad {
   id: string;
+  kind: AdKind;
   title: string;
   body: string | null;
   phone: string | null;
   telegramUsername: string | null;
   linkUrl: string | null;
   imageUrl: string | null;
+  slides?: AdSlide[];
   startsAt: string;
   endsAt: string;
   audiencePercent: number | null;
@@ -198,17 +210,23 @@ export interface Ad {
   dismissalsCount?: number;
 }
 
-/** Driver-facing ad payload (same fields, no staff metadata required). */
+/** Driver-facing ad payload. */
 export type DriverAd = Pick<
   Ad,
   | "id"
+  | "kind"
   | "title"
   | "body"
   | "phone"
   | "telegramUsername"
   | "linkUrl"
   | "imageUrl"
+  | "slides"
   | "startsAt"
   | "endsAt"
 >;
 
+export interface DriverActiveAds {
+  popup: DriverAd | null;
+  slideshow: DriverAd | null;
+}

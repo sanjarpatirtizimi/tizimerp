@@ -15,3 +15,16 @@ export class PublicAdImagesController {
     res.send(buffer);
   }
 }
+
+@Controller('public/ad-slide-images')
+export class PublicAdSlideImagesController {
+  constructor(private readonly adsService: AdsService) {}
+
+  @Get(':id')
+  async getImage(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, mimeType } = await this.adsService.getStoredSlideImage(id);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(buffer);
+  }
+}

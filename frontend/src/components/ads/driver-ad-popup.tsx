@@ -25,8 +25,8 @@ function phoneHref(phone: string): string {
 }
 
 /**
- * Shows the next active campaign when a driver opens the app.
- * Closing via X (or dismiss) records dismissal so it won't return.
+ * Shows the next active POPUP campaign when a driver opens the app.
+ * Closing via X records dismissal so it won't return.
  */
 export function DriverAdPopup() {
   const [ad, setAd] = useState<DriverAd | null>(null);
@@ -37,8 +37,8 @@ export function DriverAdPopup() {
     adsApi
       .getActiveForMe()
       .then((active) => {
-        if (cancelled || !active) return;
-        setAd(active);
+        if (cancelled || !active?.popup) return;
+        setAd(active.popup);
         setOpen(true);
       })
       .catch(() => {

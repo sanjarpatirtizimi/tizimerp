@@ -1,7 +1,8 @@
 import { apiClient } from "../api-client";
-import type { Ad, DriverAd } from "../types";
+import type { Ad, AdKind, DriverActiveAds } from "../types";
 
 export type CreateAdPayload = {
+  kind?: AdKind;
   title: string;
   body?: string;
   phone?: string;
@@ -34,8 +35,20 @@ export const adsApi = {
       .then((r) => r.data);
   },
 
+  addSlide: (id: string, file: File, opts?: { title?: string; body?: string }) => {
+    const form = new FormData();
+    form.append("image", file);
+    if (opts?.title) form.append("title", opts.title);
+    if (opts?.body) form.append("body", opts.body);
+    return apiClient
+      .post<Ad>(`/ads/${id}/slides`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((r) => r.data);
+  },
+
   getActiveForMe: () =>
-    apiClient.get<DriverAd | null>("/me/ads/active").then((r) => r.data),
+    apiClient.get<DriverActiveAds>("/me/ads/active").then((r) => r.data),
 
   dismiss: (id: string) =>
     apiClient.post<{ ok: boolean }>(`/me/ads/${id}/dismiss`).then((r) => r.data),
