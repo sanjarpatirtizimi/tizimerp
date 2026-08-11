@@ -14,7 +14,7 @@ export function SuperAdminHubGrid() {
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
         aria-hidden
       >
-        <LogoMark className="size-[min(72vw,18rem)] opacity-[0.14] sm:size-72" />
+        <LogoMark className="size-[min(72vw,18rem)] opacity-[0.18] sm:size-72" />
       </div>
       <div
         className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[rgb(255_253_248_/_0.35)] to-[rgb(255_253_248_/_0.75)]"
