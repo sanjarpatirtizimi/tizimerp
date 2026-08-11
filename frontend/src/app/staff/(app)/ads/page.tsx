@@ -272,6 +272,10 @@ function AdsPageContent() {
                         setImageFile(e.target.files?.[0] ?? null)
                       }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Ideal: 1080×1080 yoki 1080×720 px, JPG. Juda katta fayl
+                      kerak emas (~500 KB).
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -287,6 +291,14 @@ function AdsPageContent() {
                         setSlideFiles(Array.from(e.target.files ?? []))
                       }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Telefon uchun ideal:{" "}
+                      <span className="font-medium text-foreground">
+                        1080×608 px (16:9)
+                      </span>
+                      . Oddiy foto ham bo‘ladi — markazdan kesiladi. Har biri
+                      ~300–700 KB.
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Tanlangan: {slideFiles.length} ta
                       {slideFiles.length > 0 && slideFiles.length < 2

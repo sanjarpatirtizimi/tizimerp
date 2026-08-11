@@ -14,7 +14,7 @@ function telegramHref(username: string): string {
 }
 
 /**
- * Compact non-blocking carousel — sized like the balance card, with rounded corners.
+ * Phone-sized carousel: compact height, rounded card, ordinary photos crop cleanly.
  */
 export function DriverAdSlideshowBanner() {
   const [ad, setAd] = useState<DriverAd | null>(null);
@@ -54,8 +54,9 @@ export function DriverAdSlideshowBanner() {
   const body = slide.body || ad.body;
 
   const content = (
-    <div className="mx-auto max-w-lg px-4 pt-4">
-      <div className="relative h-48 overflow-hidden rounded-xl bg-muted shadow-md sm:h-52">
+    <div className="mx-auto max-w-lg px-4 pt-3">
+      {/* ~16:9 feel on phone without towering: fixed compact height + object-cover */}
+      <div className="relative h-36 w-full overflow-hidden rounded-xl bg-muted shadow-md sm:h-40">
         {slides.map((s, i) => {
           const src = mediaUrl(s.imageUrl);
           if (!src) return null;
@@ -66,23 +67,23 @@ export function DriverAdSlideshowBanner() {
               src={src}
               alt=""
               className={cn(
-                "absolute inset-0 size-full object-cover transition-opacity duration-700",
+                "absolute inset-0 size-full object-cover object-center transition-opacity duration-700",
                 i === index ? "opacity-100" : "opacity-0",
               )}
             />
           );
         })}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-3 pb-5 text-white">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-2.5 pb-4 text-white">
           <p className="line-clamp-1 text-sm font-semibold drop-shadow">
             {title}
           </p>
           {body && (
-            <p className="line-clamp-1 text-xs text-white/90 drop-shadow">
+            <p className="line-clamp-1 text-[11px] text-white/90 drop-shadow">
               {body}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pt-0.5 text-[11px] text-white/85">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-white/85">
             {ad.phone && (
               <span className="inline-flex items-center gap-1">
                 <Phone className="size-3" />
@@ -102,7 +103,7 @@ export function DriverAdSlideshowBanner() {
             )}
           </div>
         </div>
-        <div className="absolute inset-x-0 bottom-1.5 flex justify-center gap-1.5">
+        <div className="absolute inset-x-0 bottom-1 flex justify-center gap-1.5">
           {slides.map((s, i) => (
             <button
               key={s.id}
