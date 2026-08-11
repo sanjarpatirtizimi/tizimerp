@@ -14,7 +14,7 @@ function telegramHref(username: string): string {
 }
 
 /**
- * Non-blocking top carousel. Images + captions rotate; app stays usable.
+ * Compact non-blocking carousel — sized like the balance card, with rounded corners.
  */
 export function DriverAdSlideshowBanner() {
   const [ad, setAd] = useState<DriverAd | null>(null);
@@ -52,11 +52,10 @@ export function DriverAdSlideshowBanner() {
   const slide = slides[index] ?? slides[0];
   const title = slide.title || ad.title;
   const body = slide.body || ad.body;
-  const image = mediaUrl(slide.imageUrl);
 
   const content = (
-    <div className="relative overflow-hidden border-b border-[var(--border)] bg-[rgb(255_253_248)]">
-      <div className="relative aspect-[21/9] max-h-40 w-full bg-muted sm:max-h-48">
+    <div className="mx-auto max-w-lg px-4 pt-4">
+      <div className="relative h-48 overflow-hidden rounded-xl bg-muted shadow-md sm:h-52">
         {slides.map((s, i) => {
           const src = mediaUrl(s.imageUrl);
           if (!src) return null;
@@ -73,15 +72,17 @@ export function DriverAdSlideshowBanner() {
             />
           );
         })}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 space-y-1 p-3 text-white">
-          <p className="line-clamp-1 text-sm font-semibold drop-shadow">{title}</p>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-3 pb-5 text-white">
+          <p className="line-clamp-1 text-sm font-semibold drop-shadow">
+            {title}
+          </p>
           {body && (
-            <p className="line-clamp-2 text-xs text-white/90 drop-shadow">
+            <p className="line-clamp-1 text-xs text-white/90 drop-shadow">
               {body}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-3 pt-0.5 text-[11px] text-white/90">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pt-0.5 text-[11px] text-white/85">
             {ad.phone && (
               <span className="inline-flex items-center gap-1">
                 <Phone className="size-3" />
@@ -101,23 +102,30 @@ export function DriverAdSlideshowBanner() {
             )}
           </div>
         </div>
-      </div>
-      <div className="flex justify-center gap-1.5 py-1.5">
-        {slides.map((s, i) => (
-          <button
-            key={s.id}
-            type="button"
-            aria-label={`Slayd ${i + 1}`}
-            className={cn(
-              "size-1.5 rounded-full transition-colors",
-              i === index ? "bg-primary" : "bg-muted-foreground/30",
-            )}
-            onClick={() => setIndex(i)}
-          />
-        ))}
+        <div className="absolute inset-x-0 bottom-1.5 flex justify-center gap-1.5">
+          {slides.map((s, i) => (
+            <button
+              key={s.id}
+              type="button"
+              aria-label={`Slayd ${i + 1}`}
+              className={cn(
+                "size-1.5 rounded-full transition-colors",
+                i === index ? "bg-white" : "bg-white/40",
+              )}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIndex(i);
+              }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
+
+  const wrapClass =
+    "block outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
   if (ad.linkUrl) {
     return (
@@ -125,7 +133,7 @@ export function DriverAdSlideshowBanner() {
         href={ad.linkUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="block outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={wrapClass}
       >
         {content}
       </a>
@@ -138,7 +146,7 @@ export function DriverAdSlideshowBanner() {
         href={telegramHref(ad.telegramUsername)}
         target="_blank"
         rel="noopener noreferrer"
-        className="block outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={wrapClass}
       >
         {content}
       </a>
@@ -149,7 +157,7 @@ export function DriverAdSlideshowBanner() {
     return (
       <a
         href={`tel:${ad.phone.replace(/[^\d+]/g, "")}`}
-        className="block outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={wrapClass}
       >
         {content}
       </a>
