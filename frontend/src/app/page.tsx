@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { useAuth } from "@/lib/auth-context";
 import { getApiErrorMessage } from "@/lib/api-client";
+import { staffEntryPath } from "@/lib/staff-routes";
 
 export default function LoginPage() {
   const { status, claims, login } = useAuth();
@@ -22,7 +23,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status !== "authenticated" || !claims) return;
-    if (claims.kind === "staff") router.replace("/staff/dashboard");
+    if (claims.kind === "staff") router.replace(staffEntryPath(claims));
     if (claims.kind === "driver") router.replace("/driver/dashboard");
   }, [status, claims, router]);
 
@@ -33,8 +34,10 @@ export default function LoginPage() {
     }
     setIsSubmitting(true);
     try {
-      const kind = await login(phone, password);
-      router.push(kind === "staff" ? "/staff/dashboard" : "/driver/dashboard");
+      const next = await login(phone, password);
+      router.push(
+        next.kind === "staff" ? staffEntryPath(next) : "/driver/dashboard",
+      );
     } catch (error) {
       toast.error(
         getApiErrorMessage(error, "Telefon raqami yoki parol noto'g'ri"),

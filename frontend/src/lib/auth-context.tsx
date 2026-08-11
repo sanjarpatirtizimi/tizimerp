@@ -19,18 +19,16 @@ import { setOnSessionExpired } from "./api-client";
 import { decodeJwt, isExpired, type TokenClaims } from "./jwt";
 import type { TokenPair } from "./types";
 
-export type LoginResultKind = "staff" | "driver";
-
 interface AuthContextValue {
   status: "loading" | "authenticated" | "unauthenticated";
   claims: TokenClaims | null;
   /**
    * Unified login: tries the Staff credentials endpoint first, and — only if
    * that rejects — falls back to the Driver credentials endpoint. Returns
-   * which kind of account actually authenticated so the caller can route
-   * accordingly. Throws the driver-login error if both attempts fail.
+   * decoded claims so the caller can route by kind/role. Throws the
+   * driver-login error if both attempts fail.
    */
-  login: (phone: string, password: string) => Promise<LoginResultKind>;
+  login: (phone: string, password: string) => Promise<TokenClaims>;
   logout: () => Promise<void>;
 }
 
@@ -71,18 +69,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [router]);
 
-  const login = useCallback(async (phone: string, password: string): Promise<LoginResultKind> => {
+  const login = useCallback(async (phone: string, password: string): Promise<TokenClaims> => {
     try {
       const tokens = await authApi.staffLogin(phone, password);
-      setClaims(applySession(tokens));
+      const next = applySession(tokens);
+      if (!next) throw new Error("Invalid staff token");
+      setClaims(next);
       setStatus("authenticated");
-      return "staff";
+      return next;
     } catch {
       // Not a staff account (or wrong password) — fall back to Driver.
       const tokens = await authApi.driverPasswordLogin(phone, password);
-      setClaims(applySession(tokens));
+      const next = applySession(tokens);
+      if (!next) throw new Error("Invalid driver token");
+      setClaims(next);
       setStatus("authenticated");
-      return "driver";
+      return next;
     }
   }, []);
 

@@ -10,24 +10,16 @@ import {
   UserCog,
   KeyRound,
   LogOut,
-  Menu,
   BarChart3,
   Clock3,
   Flag,
   MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-  SheetClose,
-} from "@/components/ui/sheet";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { useAuth } from "@/lib/auth-context";
+import { staffEntryPath } from "@/lib/staff-routes";
 import { cn } from "@/lib/utils";
 
 const bottomNav = [
@@ -37,12 +29,12 @@ const bottomNav = [
   { href: "/staff/devices", label: "Qurilmalar", icon: Server },
 ];
 
-const sheetExtraNav = [
+const sideNavAll = [
   { href: "/staff/flagged", label: "Qizil belgilar", icon: Flag },
   { href: "/staff/feedback", label: "Murojaatlar", icon: MessageSquareText },
 ];
 
-const superAdminNav = [
+const sideNavSuperAdmin = [
   { href: "/staff/analytics", label: "Statistika", icon: BarChart3 },
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/users", label: "Operatorlar", icon: UserCog },
@@ -58,11 +50,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { claims, logout } = useAuth();
   const isSuperAdmin = claims?.kind === "staff" && claims.role === "SUPER_ADMIN";
+  const homeHref = staffEntryPath(claims);
 
-  const menuNav = [
-    ...bottomNav,
-    ...sheetExtraNav,
-    ...(isSuperAdmin ? superAdminNav : []),
+  const sideNav = [
+    ...sideNavAll,
+    ...(isSuperAdmin ? sideNavSuperAdmin : []),
   ];
 
   async function handleLogout() {
@@ -72,71 +64,75 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 backdrop-blur-md">
-        <Link href="/staff/dashboard" aria-label="Sanjar Patir">
+      <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 pr-16 backdrop-blur-md">
+        <Link href={homeHref} aria-label="Sanjar Patir">
           <BrandLogo />
         </Link>
-        <div className="flex items-center gap-1">
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            {claims?.kind === "staff" ? roleLabels[claims.role] : ""}
-          </span>
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-72">
-              <SheetHeader>
-                <SheetTitle>Menyu</SheetTitle>
-              </SheetHeader>
-              <nav className="flex flex-col gap-1 px-2">
-                {menuNav.map((item) => (
-                  <SheetClose asChild key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent",
-                        pathname === item.href && "bg-accent",
-                      )}
-                    >
-                      <item.icon className="size-4" />
-                      {item.label}
-                    </Link>
-                  </SheetClose>
-                ))}
-                <SheetClose asChild>
-                  <ChangePasswordDialog
-                    trigger={
-                      <Button
-                        variant="ghost"
-                        className="mt-4 justify-start gap-3 px-3"
-                      >
-                        <KeyRound className="size-4" />
-                        Parolni o&apos;zgartirish
-                      </Button>
-                    }
-                  />
-                </SheetClose>
-                <SheetClose asChild>
-                  <Button
-                    variant="ghost"
-                    className="justify-start gap-3 px-3 text-destructive hover:text-destructive"
-                    onClick={handleLogout}
-                  >
-                    <LogOut className="size-4" />
-                    Chiqish
-                  </Button>
-                </SheetClose>
-              </nav>
-            </SheetContent>
-          </Sheet>
-        </div>
+        <span className="truncate text-xs text-muted-foreground">
+          {claims?.kind === "staff" ? roleLabels[claims.role] : ""}
+        </span>
       </header>
 
-      <main className="flex-1 pb-20">{children}</main>
+      {/* Right-edge icon rail — replaces hamburger; touch-friendly on phones */}
+      <aside
+        className="fixed top-14 right-0 bottom-16 z-20 flex w-14 flex-col items-center border-l border-[var(--border)] bg-[rgb(255_253_248_/_0.95)] py-2 backdrop-blur-md"
+        aria-label="Tezkor menyu"
+      >
+        <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overscroll-contain px-1">
+          {sideNav.map((item) => {
+            const active =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-label={item.label}
+                title={item.label}
+                className={cn(
+                  "flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors active:scale-95",
+                  active
+                    ? "bg-primary/12 text-primary"
+                    : "hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <item.icon className="size-5" />
+              </Link>
+            );
+          })}
+        </nav>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex h-16 items-center justify-around border-t bg-background">
+        <div className="mt-auto flex flex-col items-center gap-1 border-t border-[var(--border)] px-1 pt-2">
+          <ChangePasswordDialog
+            trigger={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11 rounded-xl"
+                aria-label="Parolni o'zgartirish"
+                title="Parolni o'zgartirish"
+              >
+                <KeyRound className="size-5" />
+              </Button>
+            }
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-11 rounded-xl text-destructive hover:text-destructive"
+            aria-label="Chiqish"
+            title="Chiqish"
+            onClick={handleLogout}
+          >
+            <LogOut className="size-5" />
+          </Button>
+        </div>
+      </aside>
+
+      <main className="flex-1 pr-14 pb-20">{children}</main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 flex h-16 items-center justify-around border-t bg-background pr-14">
         {bottomNav.map((item) => {
           const active = pathname === item.href;
           return (
@@ -149,7 +145,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
               )}
             >
               <item.icon className="size-5" />
-              {item.label}
+              <span className="max-w-[4.5rem] truncate">{item.label}</span>
             </Link>
           );
         })}
