@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { RequireStaff } from "@/components/auth/route-guard";
+import { SuperAdminHubGrid } from "@/components/layout/super-admin-hub-grid";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,7 +92,9 @@ function AnalyticsPageContent() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <SuperAdminHubGrid />
+
+      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[var(--border)] pt-5">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-semibold">
             <BarChart3 className="size-5" />
