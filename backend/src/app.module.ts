@@ -18,6 +18,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { VisitsModule } from './visits/visits.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { AdsModule } from './ads/ads.module';
+import { OperatorCashModule } from './operator-cash/operator-cash.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AdsModule } from './ads/ads.module';
     DevicesModule,
     ProductsModule,
     LedgerModule,
+    OperatorCashModule,
     HikvisionModule,
     WebhooksModule,
     AgentModule,

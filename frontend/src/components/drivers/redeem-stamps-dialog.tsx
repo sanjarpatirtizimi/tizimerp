@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { ledgerApi } from "@/lib/api/ledger";
+import { operatorCashApi } from "@/lib/api/operator-cash";
 import { formatUzs } from "@/lib/format";
 import type { StampRedeemKind } from "@/lib/types";
 
@@ -50,12 +51,17 @@ export function RedeemStampsDialog({
   const [kind, setKind] = useState<StampRedeemKind>("CASH");
   const [note, setNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [operatorBalance, setOperatorBalance] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setCount(availableStampCount > 0 ? "1" : "0");
       setKind("CASH");
       setNote("");
+      void operatorCashApi
+        .getMySummary()
+        .then((s) => setOperatorBalance(s.balance))
+        .catch(() => setOperatorBalance(null));
     }
   }, [open, availableStampCount]);
 
@@ -109,8 +115,8 @@ export function RedeemStampsDialog({
           <DialogHeader>
             <DialogTitle>Pechat yechish</DialogTitle>
             <DialogDescription>
-              Eng eski pechatlar birinchi yechiladi. Balans kamayadi; yechilgan
-              pechatlar ro‘yxatda kulrang va chiziqli ko‘rinadi.
+              Eng eski pechatlar birinchi yechiladi. «Pulga» tanlansa operator
+              pulidan ham ayriladi.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -120,6 +126,12 @@ export function RedeemStampsDialog({
                 {availableStampCount}
               </span>
             </p>
+            {kind === "CASH" && operatorBalance != null && (
+              <p className="rounded-lg bg-muted/70 px-3 py-2 text-xs">
+                Operator puli qoldig‘i:{" "}
+                <span className="font-semibold">{formatUzs(operatorBalance)}</span>
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="redeem-count">Nechta pechat</Label>
               <Input

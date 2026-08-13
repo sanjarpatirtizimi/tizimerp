@@ -10,6 +10,7 @@ import {
   Flag,
   Megaphone,
   MessageSquareText,
+  Wallet,
 } from "lucide-react";
 
 export type StaffNavItem = {
@@ -20,12 +21,13 @@ export type StaffNavItem = {
 
 export const staffBottomNav: StaffNavItem[] = [
   { href: "/staff/dashboard", label: "Bosh sahifa", icon: LayoutDashboard },
+  { href: "/staff/operator-cash", label: "Operator puli", icon: Wallet },
   { href: "/staff/visits", label: "Kelishlar", icon: Clock3 },
   { href: "/staff/drivers/new", label: "Ro'yxat", icon: Users },
-  { href: "/staff/devices", label: "Qurilmalar", icon: Server },
 ];
 
 export const staffSideNavAll: StaffNavItem[] = [
+  { href: "/staff/devices", label: "Qurilmalar", icon: Server },
   { href: "/staff/flagged", label: "Qizil belgilar", icon: Flag },
   { href: "/staff/feedback", label: "Murojaatlar", icon: MessageSquareText },
 ];
@@ -43,6 +45,7 @@ export const superAdminHubTiles: StaffNavItem[] = [
   { href: "/staff/drivers/new", label: "Ro'yxat", icon: Users },
   { href: "/staff/flagged", label: "Qizil belgi", icon: Flag },
   { href: "/staff/dashboard", label: "Haydovchilar", icon: LayoutDashboard },
+  { href: "/staff/operator-cash", label: "Operator puli", icon: Wallet },
   { href: "/staff/devices", label: "Qurilmalar", icon: Server },
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/ads", label: "Reklamalar", icon: Megaphone },

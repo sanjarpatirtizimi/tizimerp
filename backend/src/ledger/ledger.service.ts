@@ -6,12 +6,14 @@ import {
 } from '@nestjs/common';
 import {
   DriverStatus,
+  OperatorCashEntryType,
   Prisma,
   StampRedeemKind,
   TransactionType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { OperatorCashService } from '../operator-cash/operator-cash.service';
 
 export interface DriverBalanceSummary {
   driverId: string;
@@ -43,6 +45,7 @@ export class LedgerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly operatorCashService: OperatorCashService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -161,14 +164,24 @@ export class LedgerService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const cashAmount = new Prisma.Decimal(params.amount);
+
       const transaction = await tx.transaction.create({
         data: {
           driverId: params.driverId,
           operatorId: params.operatorId,
           type: TransactionType.CASH_ADVANCE,
-          amount: new Prisma.Decimal(params.amount).neg(),
+          amount: cashAmount.neg(),
           description: params.description ?? 'Cash advance',
         },
+      });
+
+      await this.operatorCashService.debitForDriverCashOut(tx, {
+        operatorId: params.operatorId,
+        amount: cashAmount,
+        type: OperatorCashEntryType.CASH_OUT_ADVANCE,
+        driverTransactionId: transaction.id,
+        note: params.description ?? 'Haydovchiga avans',
       });
 
       await this.auditService.log(
@@ -379,6 +392,17 @@ export class LedgerService {
           },
         },
       });
+
+      // Faqat pulga yechilganda operator kassasidan ayriladi.
+      if (params.kind === StampRedeemKind.CASH) {
+        await this.operatorCashService.debitForDriverCashOut(tx, {
+          operatorId: params.operatorId,
+          amount: total,
+          type: OperatorCashEntryType.CASH_OUT_STAMP,
+          driverTransactionId: redemption.id,
+          note: description,
+        });
+      }
 
       await this.auditService.log(
         {
