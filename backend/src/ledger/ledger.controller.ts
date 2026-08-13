@@ -19,7 +19,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { StaffJwtPayload } from '../common/decorators/current-user.decorator';
 
-/** Staff-facing endpoints: Operators issue advances/exchanges, SuperAdmin can adjust. */
+/** Staff-facing endpoints: Operators/SuperAdmin issue advances, exchanges, adjustments. */
 @Controller('drivers/:driverId')
 @UseGuards(JwtStaffGuard, RolesGuard)
 export class LedgerController {
@@ -75,7 +75,7 @@ export class LedgerController {
   }
 
   @Post('adjustments')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
   manualAdjustment(
     @Param('driverId') driverId: string,
     @Body() dto: ManualAdjustmentDto,

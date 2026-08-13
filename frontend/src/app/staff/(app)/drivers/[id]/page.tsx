@@ -161,19 +161,23 @@ export default function DriverDetailPage({ params }: { params: Promise<{ id: str
         />
       )}
 
-      {isSuperAdmin && driver && (
+      {isStaff && driver && (
         <div className="flex items-center justify-between gap-2">
           <ManualAdjustmentDialog driverId={id} onSuccess={refresh} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={toggleBlocked}
-            disabled={isStatusUpdating}
-          >
-            {isStatusUpdating && <Loader2 className="animate-spin" />}
-            {driver.status === "BLOCKED" ? "Blokdan chiqarish" : "Haydovchini bloklash"}
-          </Button>
+          {isSuperAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={toggleBlocked}
+              disabled={isStatusUpdating}
+            >
+              {isStatusUpdating && <Loader2 className="animate-spin" />}
+              {driver.status === "BLOCKED"
+                ? "Blokdan chiqarish"
+                : "Haydovchini bloklash"}
+            </Button>
+          )}
         </div>
       )}
 
