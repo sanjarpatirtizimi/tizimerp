@@ -38,6 +38,7 @@ export class DriversService {
   ) {
     const existing = await this.prisma.driver.findUnique({
       where: { phone: dto.phone },
+      select: { id: true },
     });
     if (existing) {
       throw new ConflictException(
@@ -59,19 +60,35 @@ export class DriversService {
       ? await bcrypt.hash(dto.password, 12)
       : undefined;
 
-    const driver = await this.prisma.driver.create({
-      data: {
-        fullName: dto.fullName,
-        phone: dto.phone,
-        passwordHash,
-        carPlate: dto.carPlate,
-        carBrand: dto.carBrand,
-        carModel: dto.carModel,
-        photoBytes: photo ? new Uint8Array(photo.buffer) : undefined,
-        photoMimeType: photo ? this.mimeFromUpload(photo) : undefined,
-        status: DriverStatus.PENDING,
-      },
-    });
+    let driver;
+    try {
+      driver = await this.prisma.driver.create({
+        data: {
+          fullName: dto.fullName,
+          phone: dto.phone,
+          passwordHash,
+          carPlate: dto.carPlate,
+          carBrand: dto.carBrand,
+          carModel: dto.carModel,
+          photoBytes: photo ? new Uint8Array(photo.buffer) : undefined,
+          photoMimeType: photo ? this.mimeFromUpload(photo) : undefined,
+          status: DriverStatus.PENDING,
+        },
+      });
+    } catch (error) {
+      // Concurrent creates with the same phone (unique constraint).
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code?: string }).code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'A driver with this phone number already exists',
+        );
+      }
+      throw error;
+    }
 
     // Stable public URL that is served from Postgres (not ephemeral disk).
     if (photo) {
@@ -91,20 +108,23 @@ export class DriversService {
       metadata: { phone: dto.phone },
     });
 
-    // Never await device push on create — ISAPI can block tens of seconds and
-    // two concurrent creates freeze the whole API. Agent devices only need a
-    // PENDING row; ISAPI runs in the background.
+    // Fast path only: DB queue for relay agents. Never call LAN ISAPI from
+    // Render here — that is what froze the API when two operators created
+    // drivers at once (private IPs time out for ~10s+ each).
     if (dto.deviceIds?.length && photo) {
-      void this.enrollOnDevices(
-        driver.id,
-        dto.deviceIds,
-        photo.buffer,
-        operatorId,
-      ).catch((error) => {
-        this.logger.error(
-          `Background enrollment after create failed for ${driver.id}: ${(error as Error).message}`,
+      try {
+        await this.enrollOnDevices(
+          driver.id,
+          dto.deviceIds,
+          photo.buffer,
+          operatorId,
         );
-      });
+      } catch (error) {
+        // Driver is already saved — do not fail the whole create.
+        this.logger.error(
+          `Enrollment queue after create failed for ${driver.id}: ${(error as Error).message}`,
+        );
+      }
     }
 
     return this.findOne(driver.id);
@@ -268,18 +288,27 @@ export class DriversService {
         continue;
       }
 
-      if (!device.ipAddress || !device.username || !device.passwordEnc) {
+      // Render (cloud) cannot reach office LAN (192.168.x). Attempting ISAPI
+      // here blocks the Node process for many seconds and crashes the API
+      // under concurrent creates. Require relay agent instead.
+      if (
+        !device.ipAddress ||
+        this.isPrivateLanIp(device.ipAddress) ||
+        !device.username ||
+        !device.passwordEnc
+      ) {
         await this.prisma.driverDeviceRegistration.update({
           where: { id: registration.id },
           data: {
             syncStatus: SyncStatus.FAILED,
             syncError:
-              "Bu qurilmada na ISAPI ma'lumotlari, na relay agent sozlangan — avtomatik yuklab bo'lmadi",
+              "Cloud server Face IDga to'g'ridan-to'g'ri ulana olmaydi. Qurilmalar → Agent kaliti + relay-agent ishga tushiring",
           },
         });
         continue;
       }
 
+      // Public/routable device only (rare). Keep timeouts small via Hikvision client.
       try {
         const result = await this.hikvisionService.enrollDriver(
           device,
@@ -325,6 +354,18 @@ export class DriversService {
     });
 
     return this.findOne(driverId);
+  }
+
+  /** True for RFC1918 / loopback — unreachable from Render cloud. */
+  private isPrivateLanIp(ip: string): boolean {
+    const v = ip.trim();
+    return (
+      v === 'localhost' ||
+      /^127\./.test(v) ||
+      /^10\./.test(v) ||
+      /^192\.168\./.test(v) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(v)
+    );
   }
 
   /**

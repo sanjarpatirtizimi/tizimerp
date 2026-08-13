@@ -33,7 +33,9 @@ export class DriversController {
 
   @Post()
   @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
-  @UseInterceptors(FileInterceptor('photo'))
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   create(
     @Body() dto: CreateDriverDto,
     @UploadedFile() photo: Express.Multer.File | undefined,
@@ -44,7 +46,9 @@ export class DriversController {
 
   @Post(':id/enroll')
   @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
-  @UseInterceptors(FileInterceptor('photo'))
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   enroll(
     @Param('id') id: string,
     @Body('deviceIds') deviceIds: string,
@@ -73,7 +77,9 @@ export class DriversController {
   /** Upload or replace the durable face photo stored in the database. */
   @Post(':id/photo')
   @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
-  @UseInterceptors(FileInterceptor('photo'))
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   updatePhoto(
     @Param('id') id: string,
     @UploadedFile() photo: Express.Multer.File,
