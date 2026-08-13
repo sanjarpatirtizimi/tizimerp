@@ -91,13 +91,20 @@ export class DriversService {
       metadata: { phone: dto.phone },
     });
 
+    // Never await device push on create — ISAPI can block tens of seconds and
+    // two concurrent creates freeze the whole API. Agent devices only need a
+    // PENDING row; ISAPI runs in the background.
     if (dto.deviceIds?.length && photo) {
-      await this.enrollOnDevices(
+      void this.enrollOnDevices(
         driver.id,
         dto.deviceIds,
         photo.buffer,
         operatorId,
-      );
+      ).catch((error) => {
+        this.logger.error(
+          `Background enrollment after create failed for ${driver.id}: ${(error as Error).message}`,
+        );
+      });
     }
 
     return this.findOne(driver.id);
@@ -220,6 +227,7 @@ export class DriversService {
   ) {
     const driver = await this.prisma.driver.findUnique({
       where: { id: driverId },
+      select: { id: true, fullName: true, status: true },
     });
     if (!driver) throw new NotFoundException('Driver not found');
 
@@ -523,6 +531,8 @@ export class DriversService {
         ...(status ? { status } : {}),
       },
       orderBy: { createdAt: 'desc' },
+      // Never load BYTEA photos into list responses (OOM under concurrent use).
+      omit: { photoBytes: true, passwordHash: true },
     });
     return drivers.map((d) => this.sanitizeDriver(d));
   }
@@ -531,6 +541,7 @@ export class DriversService {
     const driver = await this.prisma.driver.findFirst({
       where: { id, deletedAt: null },
       include: { deviceRegistrations: { include: { device: true } } },
+      omit: { photoBytes: true, passwordHash: true },
     });
     if (!driver) throw new NotFoundException('Driver not found');
     return this.sanitizeDriver(driver);
@@ -679,6 +690,7 @@ export class DriversService {
   async getProfile(driverId: string) {
     const driver = await this.prisma.driver.findFirst({
       where: { id: driverId, deletedAt: null },
+      omit: { photoBytes: true, passwordHash: true },
     });
     if (!driver) throw new NotFoundException('Driver not found');
     return this.sanitizeDriver(driver);
@@ -743,9 +755,7 @@ export class DriversService {
   }
 
   /** Never leak password hashes or raw photo bytes in JSON responses. */
-  private sanitizeDriver<T extends { passwordHash?: string | null; photoBytes?: Uint8Array | Buffer | null }>(
-    driver: T,
-  ): Omit<T, 'passwordHash' | 'photoBytes'> {
+  private sanitizeDriver<T extends object>(driver: T): Omit<T, 'passwordHash' | 'photoBytes'> {
     const clone = { ...driver } as T & {
       passwordHash?: string | null;
       photoBytes?: Uint8Array | Buffer | null;

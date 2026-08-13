@@ -34,15 +34,22 @@ export class AgentService {
           OR: [{ photoBytes: { not: null } }, { photoUrl: { not: null } }],
         },
       },
-      include: { driver: true },
+      include: {
+        driver: {
+          // Do not pull photoBytes — agents fetch via public photo URL.
+          select: {
+            id: true,
+            fullName: true,
+            photoUrl: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
     const jobs: PendingEnrollmentJob[] = [];
     for (const r of registrations) {
-      const hasPhoto =
-        Boolean(r.driver.photoBytes?.length) || Boolean(r.driver.photoUrl);
-      if (!hasPhoto) continue;
+      if (!r.driver.photoUrl) continue;
       jobs.push({
         registrationId: r.id,
         driverId: r.driverId,

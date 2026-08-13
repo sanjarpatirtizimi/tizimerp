@@ -79,7 +79,11 @@ async function main() {
 
   const pollMs = Number(POLL_INTERVAL_MS) || 500;
   const enrollmentEveryMs = 10_000;
+  const heartbeatEveryMs = 30_000;
   let lastEnrollmentAt = 0;
+  let lastHeartbeatAt = 0;
+  let pollsOk = 0;
+  let lastError = null;
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Server: ${API_BASE_URL}`);
@@ -90,6 +94,7 @@ async function main() {
       ? "Pechat poll: o'chirilgan"
       : "Pechat poll: LAN AcsEvent (ishonchli yo'l)",
   );
+  log("Yangi yuz bo'lmasa ham har 30 soniyada 'ishlayapti' chiqadi. Oynani yopmang.");
   console.log("");
 
   // eslint-disable-next-line no-constant-condition
@@ -100,10 +105,13 @@ async function main() {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
         await flushOutbox(stampApi, DEVICE_ID, log);
+        pollsOk += 1;
+        lastError = null;
       } catch (error) {
         const message = error.response
           ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
           : error.message;
+        lastError = message;
         log(`AcsEvent/pechat xatosi: ${message}`);
       }
     }
@@ -117,6 +125,15 @@ async function main() {
           ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
           : error.message;
         log(`Ro'yxatga olish poll xatosi: ${message}`);
+      }
+    }
+
+    if (Date.now() - lastHeartbeatAt >= heartbeatEveryMs) {
+      lastHeartbeatAt = Date.now();
+      if (lastError) {
+        log(`ishlayapti… oxirgi xato: ${lastError}`);
+      } else {
+        log(`ishlayapti… Face ID so'ralmoqda (${pollsOk} marta OK)`);
       }
     }
 

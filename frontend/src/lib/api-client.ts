@@ -3,10 +3,14 @@ import { clearStoredSession, getStoredSession, setStoredSession } from "./auth-s
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
-export const apiClient = axios.create({ baseURL: API_URL });
+export const apiClient = axios.create({
+  baseURL: API_URL,
+  // Prevent infinite spinners when the API stalls (e.g. concurrent enroll).
+  timeout: 45_000,
+});
 
 /** Separate, interceptor-free instance for the refresh call itself (avoids recursive 401 handling). */
-const refreshClient = axios.create({ baseURL: API_URL });
+const refreshClient = axios.create({ baseURL: API_URL, timeout: 30_000 });
 
 apiClient.interceptors.request.use((config) => {
   const session = getStoredSession();
