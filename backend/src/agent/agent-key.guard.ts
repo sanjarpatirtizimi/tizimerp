@@ -19,7 +19,7 @@ export class AgentKeyGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const deviceId = request.params.deviceId as string;
+    const deviceId = (request.params.deviceId as string | undefined) ?? '';
     const authHeader = request.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {

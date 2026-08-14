@@ -23,6 +23,12 @@ export class AgentController {
     private readonly recognitionService: RecognitionService,
   ) {}
 
+  /** Key-only identity — no DEVICE_ID in the URL (avoids 404 on slug mismatch). */
+  @Get('whoami')
+  whoami(@CurrentDevice() device: Device) {
+    return this.agentService.getStatus(device.id);
+  }
+
   @Get(':deviceId/status')
   getStatus(@CurrentDevice() device: Device) {
     return this.agentService.getStatus(device.id);

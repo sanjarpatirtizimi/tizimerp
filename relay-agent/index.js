@@ -127,23 +127,38 @@ async function main() {
   console.log("");
 
   try {
-    const { data: status } = await api.get(`/agent/${DEVICE_ID}/status`, {
-      timeout: 20000,
-    });
-    if (status?.deviceId) {
-      resolvedDeviceId = status.deviceId;
-      log(
-        `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
-      );
-      if (status.deviceId !== DEVICE_ID) {
+    let identified = false;
+    try {
+      const { data: status } = await api.get("/agent/whoami", {
+        timeout: 20000,
+      });
+      if (status?.deviceId) {
+        resolvedDeviceId = status.deviceId;
+        identified = true;
         log(
-          `  ! .env DEVICE_ID=${DEVICE_ID} noto'g'ri edi — endi ${status.deviceId} ishlatiladi`,
+          `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
         );
       }
+    } catch (error) {
+      if (error.response?.status !== 404) throw error;
+    }
+    if (!identified) {
+      const res = await api.get(`/agent/${DEVICE_ID}/pending`, {
+        timeout: 20000,
+      });
+      const jobs = Array.isArray(res.data) ? res.data : [];
+      log(
+        `Server ulandi. Ro'yxat navbati: ${jobs.length} ta. Haydovchi qo'shilsa shu yerda chiqadi.`,
+      );
     }
   } catch (error) {
-    log(`Serverga ulanib bo'lmadi: ${errorText(error)}`);
-    log("  AGENT_KEY / internetni tekshiring. 10s dan keyin qayta urinadi.");
+    const status = error.response?.status;
+    if (status === 401 || status === 403) {
+      log(`AGENT_KEY noto'g'ri (HTTP ${status}). Qurilmalar → Agent kaliti.`);
+    } else {
+      log(`Server hozir javob bermadi: ${errorText(error)}`);
+      log("  Keyinroq o'zi qayta urinadi. Oynani yopmang.");
+    }
   }
 
   // eslint-disable-next-line no-constant-condition
