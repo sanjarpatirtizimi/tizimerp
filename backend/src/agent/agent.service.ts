@@ -26,12 +26,30 @@ export class AgentService {
     const registrations = await this.prisma.driverDeviceRegistration.findMany({
       where: {
         deviceId,
-        syncStatus: SyncStatus.PENDING,
         hikvisionFaceId: null,
         pairingExpiresAt: null,
+        OR: [
+          { syncStatus: SyncStatus.PENDING },
+          // Network timeouts must be retried — otherwise the face never lands.
+          {
+            syncStatus: SyncStatus.FAILED,
+            syncError: {
+              contains: 'timeout',
+              mode: 'insensitive',
+            },
+          },
+          {
+            syncStatus: SyncStatus.FAILED,
+            syncError: { contains: 'ECONNRESET' },
+          },
+          {
+            syncStatus: SyncStatus.FAILED,
+            syncError: { contains: '502' },
+          },
+        ],
         driver: {
           status: { not: DriverStatus.BLOCKED },
-          OR: [{ photoBytes: { not: null } }, { photoUrl: { not: null } }],
+          photoUrl: { not: null },
         },
       },
       include: {

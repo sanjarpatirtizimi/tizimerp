@@ -48,6 +48,32 @@ function log(message) {
   console.log(`[${new Date().toLocaleTimeString("uz-UZ")}] ${message}`);
 }
 
+function errorText(error) {
+  if (error.response) {
+    return `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`;
+  }
+  return error.message || String(error);
+}
+
+/** Server/network glitch — keep job PENDING and retry. Do not mark FAILED. */
+function isTransientNetworkError(error) {
+  const code = error.code || "";
+  const msg = errorText(error);
+  return (
+    code === "ECONNRESET" ||
+    code === "ECONNABORTED" ||
+    code === "ETIMEDOUT" ||
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    /timeout of \d+ms exceeded/i.test(msg) ||
+    /ECONNRESET/i.test(msg) ||
+    /socket hang up/i.test(msg) ||
+    /HTTP 502/.test(msg) ||
+    /HTTP 503/.test(msg) ||
+    /HTTP 504/.test(msg)
+  );
+}
+
 async function main() {
   assertConfig();
 
@@ -55,7 +81,7 @@ async function main() {
   const api = axios.create({
     baseURL: API_BASE_URL,
     headers: { Authorization: `Bearer ${AGENT_KEY}` },
-    timeout: 20000,
+    timeout: 45000,
   });
   // Enrollment (face upload) can be slow; pechat uses a shorter timeout.
   const deviceClient = new DigestHttpClient(
@@ -78,12 +104,13 @@ async function main() {
   });
 
   const pollMs = Number(POLL_INTERVAL_MS) || 500;
-  const enrollmentEveryMs = 10_000;
+  let enrollmentEveryMs = 10_000;
   const heartbeatEveryMs = 30_000;
   let lastEnrollmentAt = 0;
   let lastHeartbeatAt = 0;
   let pollsOk = 0;
   let lastError = null;
+  let enrollmentBusy = false;
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Server: ${API_BASE_URL}`);
@@ -116,16 +143,31 @@ async function main() {
       }
     }
 
-    if (Date.now() - lastEnrollmentAt >= enrollmentEveryMs) {
+    if (
+      !enrollmentBusy &&
+      Date.now() - lastEnrollmentAt >= enrollmentEveryMs
+    ) {
       lastEnrollmentAt = Date.now();
-      try {
-        await pollOnce(api, deviceClient, backendOrigin);
-      } catch (error) {
-        const message = error.response
-          ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
-          : error.message;
-        log(`Ro'yxatga olish poll xatosi: ${message}`);
-      }
+      enrollmentBusy = true;
+      // Never block pechat behind Render / Face ID enroll.
+      void pollOnce(api, deviceClient, backendOrigin)
+        .then(() => {
+          enrollmentEveryMs = 10_000;
+        })
+        .catch((error) => {
+          const message = errorText(error);
+          if (isTransientNetworkError(error)) {
+            enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 60_000);
+            log(
+              `Ro'yxatga olish: server band/timeout — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
+            );
+          } else {
+            log(`Ro'yxatga olish poll xatosi: ${message}`);
+          }
+        })
+        .finally(() => {
+          enrollmentBusy = false;
+        });
     }
 
     if (Date.now() - lastHeartbeatAt >= heartbeatEveryMs) {
@@ -142,7 +184,9 @@ async function main() {
 }
 
 async function pollOnce(api, deviceClient, backendOrigin) {
-  const { data: jobs } = await api.get(`/agent/${DEVICE_ID}/pending`);
+  const { data: jobs } = await api.get(`/agent/${DEVICE_ID}/pending`, {
+    timeout: 12000,
+  });
   if (!Array.isArray(jobs) || jobs.length === 0) return;
 
   log(`${jobs.length} ta yangi haydovchi topildi.`);
@@ -155,7 +199,7 @@ async function pollOnce(api, deviceClient, backendOrigin) {
 
       const photoResponse = await axios.get(`${backendOrigin}${job.photoUrl}`, {
         responseType: "arraybuffer",
-        timeout: 30000,
+        timeout: 45000,
       });
       const rawPhoto = Buffer.from(photoResponse.data);
       if (rawPhoto.length < 100) {
@@ -175,9 +219,13 @@ async function pollOnce(api, deviceClient, backendOrigin) {
       });
       log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
     } catch (error) {
-      const message = error.response
-        ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
-        : error.message;
+      const message = errorText(error);
+      if (isTransientNetworkError(error)) {
+        log(
+          `  · ${job.fullName}: server timeout — keyinroq qayta uriniladi (FAILED yozilmaydi)`,
+        );
+        continue;
+      }
       log(`  ✗ ${job.fullName}: ${message}`);
       await api
         .post(`/agent/${DEVICE_ID}/pending/${job.registrationId}/ack`, {
