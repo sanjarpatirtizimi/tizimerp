@@ -104,25 +104,47 @@ async function main() {
   });
 
   const pollMs = Number(POLL_INTERVAL_MS) || 500;
-  let enrollmentEveryMs = 10_000;
-  const heartbeatEveryMs = 30_000;
+  let enrollmentEveryMs = 2_000;
+  const heartbeatEveryMs = 20_000;
   let lastEnrollmentAt = 0;
   let lastHeartbeatAt = 0;
   let pollsOk = 0;
   let lastError = null;
   let enrollmentBusy = false;
+  let resolvedDeviceId = DEVICE_ID;
+  let lastEmptyLogAt = 0;
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Server: ${API_BASE_URL}`);
-  log(`Qurilma: ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
+  log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);
   log(
     STAMP_POLL_ENABLED === "false"
       ? "Pechat poll: o'chirilgan"
       : "Pechat poll: LAN AcsEvent (ishonchli yo'l)",
   );
-  log("Yangi yuz bo'lmasa ham har 30 soniyada 'ishlayapti' chiqadi. Oynani yopmang.");
+  log("Haydovchi qo'shilsa logda 'yangi haydovchi' chiqadi. Oynani yopmang.");
   console.log("");
+
+  try {
+    const { data: status } = await api.get(`/agent/${DEVICE_ID}/status`, {
+      timeout: 20000,
+    });
+    if (status?.deviceId) {
+      resolvedDeviceId = status.deviceId;
+      log(
+        `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
+      );
+      if (status.deviceId !== DEVICE_ID) {
+        log(
+          `  ! .env DEVICE_ID=${DEVICE_ID} noto'g'ri edi — endi ${status.deviceId} ishlatiladi`,
+        );
+      }
+    }
+  } catch (error) {
+    log(`Serverga ulanib bo'lmadi: ${errorText(error)}`);
+    log("  AGENT_KEY / internetni tekshiring. 10s dan keyin qayta urinadi.");
+  }
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -131,7 +153,7 @@ async function main() {
       try {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
-        await flushOutbox(stampApi, DEVICE_ID, log);
+        await flushOutbox(stampApi, resolvedDeviceId, log);
         pollsOk += 1;
         lastError = null;
       } catch (error) {
@@ -150,16 +172,21 @@ async function main() {
       lastEnrollmentAt = Date.now();
       enrollmentBusy = true;
       // Never block pechat behind Render / Face ID enroll.
-      void pollOnce(api, deviceClient, backendOrigin)
+      void pollOnce(api, deviceClient, backendOrigin, resolvedDeviceId, {
+        shouldLogEmpty: Date.now() - lastEmptyLogAt > 15_000,
+        onLoggedEmpty: () => {
+          lastEmptyLogAt = Date.now();
+        },
+      })
         .then(() => {
-          enrollmentEveryMs = 10_000;
+          enrollmentEveryMs = 2_000;
         })
         .catch((error) => {
           const message = errorText(error);
           if (isTransientNetworkError(error)) {
-            enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 60_000);
+            enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 15_000);
             log(
-              `Ro'yxatga olish: server band/timeout — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
+              `Ro'yxatga olish: server band — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
             );
           } else {
             log(`Ro'yxatga olish poll xatosi: ${message}`);
@@ -183,11 +210,17 @@ async function main() {
   }
 }
 
-async function pollOnce(api, deviceClient, backendOrigin) {
-  const { data: jobs } = await api.get(`/agent/${DEVICE_ID}/pending`, {
+async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
+  const { data: jobs } = await api.get(`/agent/${deviceId}/pending`, {
     timeout: 12000,
   });
-  if (!Array.isArray(jobs) || jobs.length === 0) return;
+  if (!Array.isArray(jobs) || jobs.length === 0) {
+    if (opts.shouldLogEmpty) {
+      log("Ro'yxat: navbat bo'sh (haydovchi qo'shilsa shu yerda chiqadi)");
+      opts.onLoggedEmpty?.();
+    }
+    return;
+  }
 
   log(`${jobs.length} ta yangi haydovchi topildi.`);
 
@@ -213,7 +246,7 @@ async function pollOnce(api, deviceClient, backendOrigin) {
 
       await enrollOnDevice(deviceClient, employeeNo, job.fullName, photoBuffer);
 
-      await api.post(`/agent/${DEVICE_ID}/pending/${job.registrationId}/ack`, {
+      await api.post(`/agent/${deviceId}/pending/${job.registrationId}/ack`, {
         success: true,
         hikvisionFaceId: employeeNo,
       });
@@ -228,7 +261,7 @@ async function pollOnce(api, deviceClient, backendOrigin) {
       }
       log(`  ✗ ${job.fullName}: ${message}`);
       await api
-        .post(`/agent/${DEVICE_ID}/pending/${job.registrationId}/ack`, {
+        .post(`/agent/${deviceId}/pending/${job.registrationId}/ack`, {
           success: false,
           error: message.slice(0, 500),
         })

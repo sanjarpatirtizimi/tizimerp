@@ -181,23 +181,39 @@ export class DevicesService {
     });
   }
 
-  /** Used by AgentKeyGuard to authenticate relay-agent polling requests. */
+  /** Used by AgentKeyGuard. Resolves by URL id, name, or unique agent key hash. */
   async verifyAgentKey(deviceId: string, providedKey: string) {
-    const device = await this.prisma.device.findUnique({
+    const hash = this.hashAgentKey(providedKey);
+
+    let device = await this.prisma.device.findUnique({
       where: { id: deviceId },
     });
-    if (!device?.agentKeyHash) {
-      throw new UnauthorizedException(
-        'No agent key configured for this device',
-      );
+    if (!device) {
+      device = await this.prisma.device.findFirst({
+        where: { name: deviceId },
+      });
     }
 
-    const expected = Buffer.from(device.agentKeyHash);
-    const actual = Buffer.from(this.hashAgentKey(providedKey));
-    const isValid =
-      expected.length === actual.length && timingSafeEqual(expected, actual);
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid agent key');
+    const keyMatches = (row: typeof device) => {
+      if (!row?.agentKeyHash) return false;
+      const expected = Buffer.from(row.agentKeyHash);
+      const actual = Buffer.from(hash);
+      return (
+        expected.length === actual.length &&
+        timingSafeEqual(expected, actual)
+      );
+    };
+
+    if (!keyMatches(device)) {
+      device = await this.prisma.device.findFirst({
+        where: { agentKeyHash: hash },
+      });
+    }
+
+    if (!device?.agentKeyHash || !keyMatches(device)) {
+      throw new UnauthorizedException(
+        'Invalid agent key or unknown device — Qurilmalar → Agent kaliti',
+      );
     }
     return device;
   }

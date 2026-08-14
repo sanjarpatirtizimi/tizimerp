@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import type { Device } from '@prisma/client';
 import { AgentService } from './agent.service';
 import { AgentKeyGuard } from './agent-key.guard';
+import { CurrentDevice } from './current-device.decorator';
 import { AckEnrollmentDto } from './dto/ack-enrollment.dto';
 import { AgentRecognitionBatchDto } from './dto/agent-recognition.dto';
 import { RecognitionService } from '../webhooks/recognition.service';
@@ -21,18 +23,23 @@ export class AgentController {
     private readonly recognitionService: RecognitionService,
   ) {}
 
+  @Get(':deviceId/status')
+  getStatus(@CurrentDevice() device: Device) {
+    return this.agentService.getStatus(device.id);
+  }
+
   @Get(':deviceId/pending')
-  listPending(@Param('deviceId') deviceId: string) {
-    return this.agentService.listPending(deviceId);
+  listPending(@CurrentDevice() device: Device) {
+    return this.agentService.listPending(device.id);
   }
 
   @Post(':deviceId/pending/:registrationId/ack')
   ack(
-    @Param('deviceId') deviceId: string,
+    @CurrentDevice() device: Device,
     @Param('registrationId') registrationId: string,
     @Body() dto: AckEnrollmentDto,
   ) {
-    return this.agentService.ack(deviceId, registrationId, dto);
+    return this.agentService.ack(device.id, registrationId, dto);
   }
 
   /**
@@ -41,7 +48,7 @@ export class AgentController {
    */
   @Post(':deviceId/recognition-events')
   async ingestRecognitionEvents(
-    @Param('deviceId') deviceId: string,
+    @CurrentDevice() device: Device,
     @Body() dto: AgentRecognitionBatchDto,
   ) {
     const results: Array<{
@@ -72,7 +79,7 @@ export class AgentController {
           ? `time:${employeeNo}:${event.eventTime}`
           : undefined;
 
-      const outcome = await this.recognitionService.ingestFaceMatch(deviceId, {
+      const outcome = await this.recognitionService.ingestFaceMatch(device.id, {
         employeeNo,
         eventDateTime:
           eventDateTime && !Number.isNaN(eventDateTime.getTime())

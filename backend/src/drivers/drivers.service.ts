@@ -111,19 +111,28 @@ export class DriversService {
     // Fast path only: DB queue for relay agents. Never call LAN ISAPI from
     // Render here — that is what froze the API when two operators created
     // drivers at once (private IPs time out for ~10s+ each).
-    if (dto.deviceIds?.length && photo) {
-      try {
-        await this.enrollOnDevices(
-          driver.id,
-          dto.deviceIds,
-          photo.buffer,
-          operatorId,
-        );
-      } catch (error) {
-        // Driver is already saved — do not fail the whole create.
-        this.logger.error(
-          `Enrollment queue after create failed for ${driver.id}: ${(error as Error).message}`,
-        );
+    if (photo) {
+      let deviceIds = dto.deviceIds ?? [];
+      if (deviceIds.length === 0) {
+        const agentDevices = await this.prisma.device.findMany({
+          where: { agentKeyHash: { not: null } },
+          select: { id: true },
+        });
+        deviceIds = agentDevices.map((d) => d.id);
+      }
+      if (deviceIds.length > 0) {
+        try {
+          await this.enrollOnDevices(
+            driver.id,
+            deviceIds,
+            photo.buffer,
+            operatorId,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Enrollment queue after create failed for ${driver.id}: ${(error as Error).message}`,
+          );
+        }
       }
     }
 
