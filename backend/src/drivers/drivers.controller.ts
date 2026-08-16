@@ -132,6 +132,13 @@ export class DriversController {
     return this.driversService.findAll(status);
   }
 
+  /** Token for the public QR signup page. Must stay above :id. */
+  @Get('self-register-link')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  selfRegisterLink() {
+    return { token: this.driversService.getSelfRegisterToken() };
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.driversService.findOne(id);

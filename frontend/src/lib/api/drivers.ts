@@ -113,4 +113,9 @@ export const driversApi = {
 
   remove: (id: string) =>
     apiClient.delete<{ ok: boolean }>(`/drivers/${id}`).then((r) => r.data),
+
+  getSelfRegisterLink: () =>
+    apiClient
+      .get<{ token: string }>("/drivers/self-register-link")
+      .then((r) => r.data),
 };

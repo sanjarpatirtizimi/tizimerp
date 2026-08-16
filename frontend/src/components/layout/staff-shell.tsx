@@ -44,7 +44,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-svh flex-col">
       <header
         className={cn(
-          "sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 backdrop-blur-md",
+          "sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgb(255_253_248_/_0.9)] px-4 backdrop-blur-md print:hidden",
           !hubMode && "pr-16",
         )}
       >
@@ -88,7 +88,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
       {!hubMode && (
         <aside
-          className="fixed top-14 right-0 bottom-16 z-20 flex w-14 flex-col items-center border-l border-[var(--border)] bg-[rgb(255_253_248_/_0.95)] py-2 backdrop-blur-md"
+          className="fixed top-14 right-0 bottom-16 z-20 flex w-14 flex-col items-center border-l border-[var(--border)] bg-[rgb(255_253_248_/_0.95)] py-2 backdrop-blur-md print:hidden"
           aria-label="Tezkor menyu"
         >
           <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overscroll-contain px-1">
@@ -145,13 +145,13 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       )}
 
       <main
-        className={cn("flex-1", hubMode ? "pb-4" : "pr-14 pb-20")}
+        className={cn("flex-1", hubMode ? "pb-4" : "pr-14 pb-20 print:pr-0 print:pb-0")}
       >
         {children}
       </main>
 
       {!hubMode && (
-        <nav className="fixed inset-x-0 bottom-0 z-20 flex h-16 items-center justify-around border-t bg-background pr-14">
+        <nav className="fixed inset-x-0 bottom-0 z-20 flex h-16 items-center justify-around border-t bg-background pr-14 print:hidden">
           {staffBottomNav.map((item) => {
             const active = pathname === item.href;
             return (

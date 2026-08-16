@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Camera, Loader2, Pencil } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,8 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CarNameField, CarPlateField } from "@/components/drivers/car-fields";
+import { FacePhotoPicker } from "@/components/drivers/face-photo-picker";
 import { API_URL, getApiErrorMessage } from "@/lib/api-client";
 import { driversApi } from "@/lib/api/drivers";
+import { isValidCarPlate } from "@/lib/car-plate";
 import type { Driver } from "@/lib/types";
 
 const backendOrigin = API_URL.replace(/\/api\/?$/, "");
@@ -33,7 +36,6 @@ export function EditDriverDialog({
   driver: Driver;
   onSuccess: (driver: Driver) => void | Promise<void>;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [fullName, setFullName] = useState(driver.fullName);
   const [phone, setPhone] = useState(driver.phone);
@@ -41,8 +43,12 @@ export function EditDriverDialog({
   const [carPlate, setCarPlate] = useState(driver.carPlate ?? "");
   const [carBrand, setCarBrand] = useState(driver.carBrand ?? "");
   const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const newPhotoPreview = useMemo(
+    () => (photo ? URL.createObjectURL(photo) : null),
+    [photo],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -53,18 +59,15 @@ export function EditDriverDialog({
     setCarPlate(driver.carPlate ?? "");
     setCarBrand(driver.carBrand ?? "");
     setPhoto(null);
-    setPhotoPreview(null);
   }, [open, driver]);
-
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setPhoto(file);
-    setPhotoPreview(file ? URL.createObjectURL(file) : null);
-  }
 
   async function handleSave() {
     if (!fullName.trim() || !phone.trim()) {
       toast.error("Ism va telefon majburiy");
+      return;
+    }
+    if (carPlate.trim() && !isValidCarPlate(carPlate)) {
+      toast.error("Mashina raqamini to'g'ri yozing. Masalan: 01A123AB");
       return;
     }
     setIsSaving(true);
@@ -89,7 +92,7 @@ export function EditDriverDialog({
     }
   }
 
-  const currentPhoto = photoPreview ?? photoSrc(driver.photoUrl);
+  const previewUrl = newPhotoPreview ?? photoSrc(driver.photoUrl) ?? null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -105,34 +108,14 @@ export function EditDriverDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="relative flex size-24 items-center justify-center overflow-hidden rounded-full border-2 border-dashed bg-muted"
-            >
-              {currentPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={currentPhoto} alt={fullName} className="size-full object-cover" />
-              ) : (
-                <Camera className="size-6 text-muted-foreground" />
-              )}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handlePhotoChange}
-            />
-          </div>
-          <p className="text-center text-xs text-muted-foreground">
-            Rasmni bosib almashtiring — bazada saqlanadi
-          </p>
+          <FacePhotoPicker
+            previewUrl={previewUrl}
+            onChange={setPhoto}
+            hint="Kamerani bosing. Yuzni chiziq ichiga qo'ying."
+          />
 
           <div className="space-y-2">
-            <Label htmlFor="edit-fullName">To&apos;liq ism</Label>
+            <Label htmlFor="edit-fullName">Ismi</Label>
             <Input
               id="edit-fullName"
               value={fullName}
@@ -141,7 +124,7 @@ export function EditDriverDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-phone">Telefon raqami</Label>
+            <Label htmlFor="edit-phone">Telefon</Label>
             <Input
               id="edit-phone"
               inputMode="tel"
@@ -160,23 +143,17 @@ export function EditDriverDialog({
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="edit-carPlate">Davlat raqami</Label>
-              <Input
-                id="edit-carPlate"
-                value={carPlate}
-                onChange={(e) => setCarPlate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-carBrand">Avtomobil markasi</Label>
-              <Input
-                id="edit-carBrand"
-                value={carBrand}
-                onChange={(e) => setCarBrand(e.target.value)}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <CarPlateField
+              id="edit-carPlate"
+              value={carPlate}
+              onChange={setCarPlate}
+            />
+            <CarNameField
+              id="edit-carBrand"
+              value={carBrand}
+              onChange={setCarBrand}
+            />
           </div>
         </div>
 

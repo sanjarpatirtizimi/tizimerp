@@ -4,19 +4,27 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   DriverStatus,
   SyncStatus,
+  UserRole,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { createHash, timingSafeEqual } from 'crypto';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { HikvisionService } from '../hikvision/hikvision.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { SelfRegisterDriverDto } from './dto/self-register-driver.dto';
 import { ManualFaceMappingDto } from './dto/manual-face-mapping.dto';
+import {
+  isValidCarPlate,
+  normalizeCarPlate,
+} from '../common/utils/car-plate';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'drivers');
 const PAIRING_WINDOW_MS = 3 * 60 * 1000;
@@ -42,7 +50,7 @@ export class DriversService {
     });
     if (existing) {
       throw new ConflictException(
-        'A driver with this phone number already exists',
+        'Bu telefon raqami allaqachon bor',
       );
     }
 
@@ -54,6 +62,15 @@ export class DriversService {
 
     if (photo) {
       this.assertPhotoBuffer(photo.buffer);
+    }
+
+    if (dto.carPlate) {
+      if (!isValidCarPlate(dto.carPlate)) {
+        throw new BadRequestException(
+          'Mashina raqami: 2 raqam, 1 harf, 3 raqam, 2 harf. Masalan 01A123AB',
+        );
+      }
+      dto.carPlate = normalizeCarPlate(dto.carPlate);
     }
 
     const passwordHash = dto.password
@@ -84,7 +101,7 @@ export class DriversService {
         (error as { code?: string }).code === 'P2002'
       ) {
         throw new ConflictException(
-          'A driver with this phone number already exists',
+          'Bu telefon raqami allaqachon bor',
         );
       }
       throw error;
@@ -137,6 +154,77 @@ export class DriversService {
     }
 
     return this.findOne(driver.id);
+  }
+
+  /** Stable QR token: env override, else derived from JWT secret (does not change across deploys). */
+  getSelfRegisterToken(): string {
+    const explicit = process.env.DRIVER_SELF_REGISTER_TOKEN?.trim();
+    if (explicit && explicit.length >= 16) {
+      return explicit;
+    }
+    const secret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret';
+    return createHash('sha256')
+      .update(`driver-self-register-v1:${secret}`)
+      .digest('hex')
+      .slice(0, 32);
+  }
+
+  assertSelfRegisterToken(token: string | undefined) {
+    const expected = this.getSelfRegisterToken();
+    const got = (token ?? '').trim();
+    if (!this.tokensEqual(got, expected)) {
+      throw new UnauthorizedException(
+        'QR kod eskirgan yoki noto‘g‘ri. Yangi kodni skaner qiling.',
+      );
+    }
+  }
+
+  async selfRegister(
+    dto: SelfRegisterDriverDto,
+    photo: Express.Multer.File | undefined,
+  ) {
+    this.assertSelfRegisterToken(dto.token);
+    if (!photo?.buffer?.length) {
+      throw new BadRequestException('Yuz rasmi majburiy');
+    }
+    if (!isValidCarPlate(dto.carPlate)) {
+      throw new BadRequestException(
+        'Mashina raqami: 2 raqam, 1 harf, 3 raqam, 2 harf. Masalan 01A123AB',
+      );
+    }
+
+    const operator = await this.prisma.user.findFirst({
+      where: { role: UserRole.SUPER_ADMIN, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!operator) {
+      throw new BadRequestException('Tizim hali sozlanmagan');
+    }
+
+    const driver = await this.create(
+      {
+        fullName: dto.fullName.trim(),
+        phone: dto.phone.trim(),
+        password: dto.password,
+        carPlate: dto.carPlate,
+        carBrand: dto.carBrand.trim(),
+        deviceIds: [],
+      },
+      photo,
+      operator.id,
+    );
+
+    return { ok: true as const, fullName: driver.fullName };
+  }
+
+  private tokensEqual(a: string, b: string): boolean {
+    const left = Buffer.from(a);
+    const right = Buffer.from(b);
+    if (left.length !== right.length) {
+      return false;
+    }
+    return timingSafeEqual(left, right);
   }
 
   /** Replace/upload the durable face photo for an existing driver. */
@@ -620,6 +708,15 @@ export class DriversService {
           'Bu telefon raqami boshqa haydovchiga biriktirilgan',
         );
       }
+    }
+
+    if (dto.carPlate) {
+      if (!isValidCarPlate(dto.carPlate)) {
+        throw new BadRequestException(
+          'Mashina raqami: 2 raqam, 1 harf, 3 raqam, 2 harf. Masalan 01A123AB',
+        );
+      }
+      dto.carPlate = normalizeCarPlate(dto.carPlate);
     }
 
     const passwordHash = dto.password
