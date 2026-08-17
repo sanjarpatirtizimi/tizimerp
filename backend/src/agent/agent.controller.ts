@@ -39,6 +39,12 @@ export class AgentController {
     return this.agentService.listPending(device.id);
   }
 
+  /** Empty the Face ID photo-push queue and drop never-enrolled waiting drivers. */
+  @Post(':deviceId/pending/clear')
+  clearPending() {
+    return this.agentService.resetEnrollmentBacklog();
+  }
+
   @Post(':deviceId/pending/:registrationId/ack')
   ack(
     @CurrentDevice() device: Device,

@@ -139,16 +139,28 @@ function FaceCameraOverlay({
     if (!video || !ready || busy) return;
     setBusy(true);
     try {
-      const width = video.videoWidth || 720;
-      const height = video.videoHeight || 960;
+      const vw = video.videoWidth || 720;
+      const vh = video.videoHeight || 960;
+      const targetRatio = 3 / 4;
+      let sx = 0;
+      let sy = 0;
+      let sw = vw;
+      let sh = vh;
+      if (vw / vh > targetRatio) {
+        sw = vh * targetRatio;
+        sx = (vw - sw) / 2;
+      } else {
+        sh = vw / targetRatio;
+        sy = (vh - sh) / 2;
+      }
       const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = 480;
+      canvas.height = 640;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("canvas");
-      ctx.drawImage(video, 0, 0, width, height);
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, 480, 640);
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.9),
+        canvas.toBlob(resolve, "image/jpeg", 0.92),
       );
       if (!blob) throw new Error("blob");
       onCapture(new File([blob], "yuz.jpg", { type: "image/jpeg" }));

@@ -8,7 +8,7 @@ services:
     rootDir: backend
     plan: free
     autoDeploy: true
-    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build && (mkdir -p relay-agent-files && cp -f ../relay-agent/index.js ../relay-agent/prepare-face-jpeg.js ../relay-agent/hikvision-multipart.js ../relay-agent/sync-agent-files.js ../relay-agent/start.cmd ../relay-agent/update.cmd relay-agent-files/ || true)
     startCommand: npx prisma migrate deploy && npm run start:prod
     healthCheckPath: /api
     envVars:
