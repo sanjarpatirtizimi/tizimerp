@@ -22,7 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DeviceFormDialog } from "@/components/devices/device-form-dialog";
 import { AgentKeyDialog } from "@/components/devices/agent-key-dialog";
-import { getApiErrorMessage } from "@/lib/api-client";
+import { API_URL, getApiErrorMessage } from "@/lib/api-client";
 import { devicesApi } from "@/lib/api/devices";
 import type { Device, DeviceStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -34,6 +34,79 @@ const statusStyles: Record<DeviceStatus, string> = {
   MAINTENANCE: "bg-amber-500/15 text-amber-600",
   ERROR: "bg-destructive/15 text-destructive",
 };
+
+const AGENT_RAW =
+  "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent";
+
+async function downloadAgentFile(file: string) {
+  const urls = [`${API_URL}/public/relay-agent/${file}`, `${AGENT_RAW}/${file}`];
+  let lastError: unknown;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = file;
+      a.click();
+      URL.revokeObjectURL(href);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function AgentUpdateCard() {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function handleDownload(file: string) {
+    setBusy(file);
+    try {
+      await downloadAgentFile(file);
+      toast.success(`${file} yuklandi — relay-agent papkasiga qo'ying`);
+    } catch {
+      toast.error("Yuklab bo'lmadi. GitHub ochiqligini tekshiring");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card className="border-amber-500/40 bg-amber-500/10">
+      <CardContent className="space-y-2 py-3">
+        <p className="text-sm font-medium">Haydovchi yuzi yuklanmasa</p>
+        <p className="text-xs text-muted-foreground">
+          Gate kompyuterida <code>relay-agent</code> va <code>relay-agent2</code> papkasiga
+          yangi <code>index.js</code> ni qo&apos;ying, keyin <code>npm start</code>. Chrome da
+          IP ochilishi yetarli emas — eski agent rasmlarni noto&apos;g&apos;ri JPEG qilib yuboradi.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => void handleDownload("update.cmd")}
+          >
+            {busy === "update.cmd" ? <Loader2 className="animate-spin" /> : null}
+            update.cmd
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy !== null}
+            onClick={() => void handleDownload("index.js")}
+          >
+            {busy === "index.js" ? <Loader2 className="animate-spin" /> : null}
+            index.js
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function DevicesPage() {
   return (
@@ -87,6 +160,7 @@ function DevicesPageContent() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
+      <AgentUpdateCard />
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Qurilmalar</h1>
         {isSuperAdmin && (

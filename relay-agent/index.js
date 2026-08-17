@@ -8,10 +8,86 @@ const {
   enqueueEvents,
   flushOutbox,
 } = require("./acs-events");
-const { prepareFaceJpeg } = require("./prepare-face-jpeg");
-const { buildHikvisionFaceMultipart } = require("./hikvision-multipart");
 
+const AGENT_CODE_VERSION = "1.2.0";
 const LOCK_PATH = path.join(__dirname, "agent.lock");
+const AGENT_RAW_BASE =
+  "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent";
+
+function buildHikvisionFaceMultipartFallback(employeeNo, photoBuffer) {
+  const meta = JSON.stringify({
+    faceLibType: "blackFD",
+    FDID: "1",
+    FPID: String(employeeNo),
+  });
+  const metaBytes = Buffer.from(meta, "utf8");
+  const boundary = `----hik${Date.now().toString(16)}`;
+  const CRLF = "\r\n";
+  const head =
+    `--${boundary}${CRLF}` +
+    `Content-Disposition: form-data; name="FaceDataRecord"${CRLF}` +
+    `Content-Type: application/json${CRLF}` +
+    `Content-Length: ${metaBytes.length}${CRLF}` +
+    `${CRLF}`;
+  const mid =
+    `${CRLF}--${boundary}${CRLF}` +
+    `Content-Disposition: form-data; name="FaceImage"; filename="face.jpg"${CRLF}` +
+    `Content-Type: image/jpeg${CRLF}` +
+    `Content-Length: ${photoBuffer.length}${CRLF}` +
+    `${CRLF}`;
+  const tail = `${CRLF}--${boundary}--${CRLF}`;
+  const data = Buffer.concat([
+    Buffer.from(head, "utf8"),
+    metaBytes,
+    Buffer.from(mid, "utf8"),
+    photoBuffer,
+    Buffer.from(tail, "utf8"),
+  ]);
+  return {
+    data,
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(data.length),
+    },
+  };
+}
+
+function loadMultipart() {
+  try {
+    return require("./hikvision-multipart").buildHikvisionFaceMultipart;
+  } catch {
+    return buildHikvisionFaceMultipartFallback;
+  }
+}
+
+let buildHikvisionFaceMultipart = loadMultipart();
+let prepareFaceJpeg = async (input) => {
+  const fn = loadPrepareFaceJpeg();
+  prepareFaceJpeg = fn;
+  return fn(input);
+};
+
+async function bootstrapHelperFiles() {
+  const files = [
+    "prepare-face-jpeg.js",
+    "hikvision-multipart.js",
+    "sync-agent-files.js",
+  ];
+  for (const file of files) {
+    const dest = path.join(__dirname, file);
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 80) continue;
+    try {
+      const { data } = await axios.get(`${AGENT_RAW_BASE}/${file}`, {
+        timeout: 20000,
+        responseType: "arraybuffer",
+      });
+      fs.writeFileSync(dest, Buffer.from(data));
+    } catch {
+      // offline — fallbacks in this file still enroll JPEGs
+    }
+  }
+  buildHikvisionFaceMultipart = loadMultipart();
+}
 
 const {
   API_BASE_URL,
@@ -133,6 +209,32 @@ function isTransientNetworkError(error) {
   );
 }
 
+function loadPrepareFaceJpeg() {
+  try {
+    const abs = require.resolve("./prepare-face-jpeg");
+    delete require.cache[abs];
+    return require("./prepare-face-jpeg").prepareFaceJpeg;
+  } catch {
+    return async function fallbackPrepareFaceJpeg(input) {
+      if (!Buffer.isBuffer(input) || input.length < 100) {
+        throw new Error("Rasm fayli bo'sh yoki juda kichik");
+      }
+      if (input[0] === 0xff && input[1] === 0xd8) {
+        return {
+          buffer: input,
+          width: 0,
+          height: 0,
+          chroma: "original-jpeg",
+          reencoded: false,
+        };
+      }
+      throw new Error(
+        "Rasm JPEG emas. Haydovchiga aniq yuz rasmini JPEG qilib yuklang.",
+      );
+    };
+  }
+}
+
 function describeEnrollError(error) {
   const message = errorText(error);
   if (
@@ -149,7 +251,20 @@ function describeEnrollError(error) {
 
 async function main() {
   assertConfig();
+  await bootstrapHelperFiles();
+  let synced = { updated: false };
+  try {
+    const sync = require("./sync-agent-files");
+    synced = await sync.syncAgentFiles(API_BASE_URL, log);
+    if (synced.updated) {
+      sync.respawnSelf();
+      return;
+    }
+  } catch {
+    // first run without sync-agent-files.js
+  }
   acquireLock();
+  prepareFaceJpeg = loadPrepareFaceJpeg();
 
   const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
   const api = axios.create({
@@ -189,7 +304,7 @@ async function main() {
   let lastEmptyLogAt = 0;
 
   log("Sanjar Patir relay agent ishga tushdi.");
-  log("Versiya 1.1.0 — rasm: sharp baseline 4:2:0 (eski Jimp emas)");
+  log(`Versiya ${AGENT_CODE_VERSION} — rasm: 4:2:0 JPEG (Jimp emas)`);
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);

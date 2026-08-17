@@ -30,11 +30,11 @@ export class AgentService {
         pairingExpiresAt: null,
         OR: [
           { syncStatus: SyncStatus.PENDING },
-          // Modeling errors are not transient, but a JPEG-format fix should
-          // retry FAILED jobs. Wait 60s so a bad photo cannot hammer FDLib.
+            // Modeling errors are not transient, but a JPEG-format fix should
+            // retry FAILED jobs. Wait 20s so a bad photo cannot hammer FDLib.
           {
             syncStatus: SyncStatus.FAILED,
-            updatedAt: { lte: new Date(Date.now() - 60_000) },
+            updatedAt: { lte: new Date(Date.now() - 20_000) },
           },
         ],
         driver: {
