@@ -4,7 +4,7 @@ const path = require("path");
 const axios = require("axios");
 
 const enrollCooldownUntil = new Map();
-const AGENT_CODE_VERSION = "1.2.4";
+const AGENT_CODE_VERSION = "1.2.5";
 let lastClearAttemptAt = 0;
 let lastCooldownLogAt = 0;
 

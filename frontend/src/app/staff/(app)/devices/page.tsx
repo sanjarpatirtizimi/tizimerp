@@ -96,7 +96,7 @@ function AgentUpdateCard() {
         <p className="text-xs text-muted-foreground">
           Gate kompyuterida <code>relay-agent</code> va <code>relay-agent2</code> papkasiga
           yangi <code>index.js</code> ni qo&apos;ying, keyin <code>npm start</code> — logda
-          <code>Versiya 1.2.4</code> chiqishi kerak. Navbatda haydovchi bo‘lsa pechat
+          <code>Versiya 1.2.5</code> chiqishi kerak. Navbatda haydovchi bo‘lsa pechat
           so‘ralmaydi — aks holda Face ID timeout qiladi.
         </p>
         <div className="flex flex-wrap gap-2">

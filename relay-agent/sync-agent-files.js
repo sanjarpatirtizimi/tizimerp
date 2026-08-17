@@ -2,13 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const AGENT_CODE_VERSION = "1.2.4";
+const AGENT_CODE_VERSION = "1.2.5";
 
 const FILES = [
   "index.js",
   "prepare-face-jpeg.js",
   "hikvision-multipart.js",
-  "acs-events.js",
   "sync-agent-files.js",
   "faceid-schedule.js",
   "digest-http-client.js",
@@ -20,6 +19,9 @@ function updateBases(apiBaseUrl) {
   if (apiBaseUrl) {
     bases.push(`${String(apiBaseUrl).replace(/\/$/, "")}/public/relay-agent`);
   }
+  bases.push(
+    "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent",
+  );
   bases.push(
     "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/main/relay-agent",
   );
