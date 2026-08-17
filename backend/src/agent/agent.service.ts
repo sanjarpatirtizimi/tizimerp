@@ -28,16 +28,9 @@ export class AgentService {
         deviceId,
         hikvisionFaceId: null,
         pairingExpiresAt: null,
-        OR: [
-          { syncStatus: SyncStatus.PENDING },
-            // Modeling errors are not transient, but a JPEG-format fix should
-            // retry FAILED jobs. Wait 20s so a bad photo cannot hammer FDLib.
-          {
-            syncStatus: SyncStatus.FAILED,
-            updatedAt: { lte: new Date(Date.now() - 20_000) },
-          },
-        ],
+        syncStatus: SyncStatus.PENDING,
         driver: {
+          deletedAt: null,
           status: { not: DriverStatus.BLOCKED },
         },
       },
@@ -79,6 +72,79 @@ export class AgentService {
       name: device?.name ?? deviceId,
       pendingCount: pending.length,
     };
+  }
+
+  /**
+   * Drops Face ID photo-push jobs on every device and soft-deletes drivers
+   * who never received a stamp and were never enrolled on a terminal.
+   * Ledger rows and already-synced faces are kept.
+   */
+  async resetEnrollmentBacklog(): Promise<{
+    clearedJobs: number;
+    removedDrivers: number;
+  }> {
+    const photoPushWhere = {
+      hikvisionFaceId: null,
+      pairingExpiresAt: null,
+      syncStatus: { in: [SyncStatus.PENDING, SyncStatus.FAILED] },
+    };
+
+    const waitingDrivers = await this.prisma.driver.findMany({
+      where: {
+        deletedAt: null,
+        transactions: { none: {} },
+        recognitionEvents: { none: {} },
+        deviceRegistrations: {
+          none: {
+            OR: [
+              { hikvisionFaceId: { not: null } },
+              { pairingExpiresAt: { gt: new Date() } },
+            ],
+          },
+        },
+      },
+      select: { id: true, phone: true },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      let removedDrivers = 0;
+      if (waitingDrivers.length > 0) {
+        const waitingIds = waitingDrivers.map((driver) => driver.id);
+        await tx.driverDeviceRegistration.deleteMany({
+          where: { driverId: { in: waitingIds } },
+        });
+        await tx.refreshToken.deleteMany({
+          where: { driverId: { in: waitingIds } },
+        });
+        await tx.otpCode.deleteMany({
+          where: { driverId: { in: waitingIds } },
+        });
+        for (const driver of waitingDrivers) {
+          await tx.driver.update({
+            where: { id: driver.id },
+            data: {
+              deletedAt: new Date(),
+              status: DriverStatus.BLOCKED,
+              phone: `deleted:${driver.id}:${driver.phone}`,
+              passwordHash: null,
+              photoBytes: null,
+              photoUrl: null,
+              photoMimeType: null,
+            },
+          });
+        }
+        removedDrivers = waitingDrivers.length;
+      }
+
+      const cleared = await tx.driverDeviceRegistration.deleteMany({
+        where: photoPushWhere,
+      });
+
+      return {
+        clearedJobs: cleared.count,
+        removedDrivers,
+      };
+    });
   }
 
   /** Relay reports the outcome of pushing one job to the physical device. */

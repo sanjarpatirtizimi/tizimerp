@@ -75,14 +75,29 @@ function AgentUpdateCard() {
     }
   }
 
+  async function handleClearQueue() {
+    setBusy("clear");
+    try {
+      const result = await devicesApi.clearEnrollmentQueue();
+      toast.success(
+        `Navbat tozalandi: ${result.clearedJobs} ta ish, ${result.removedDrivers} ta kutilgan haydovchi o'chirildi`,
+      );
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Navbatni tozalab bo'lmadi"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <Card className="border-amber-500/40 bg-amber-500/10">
       <CardContent className="space-y-2 py-3">
         <p className="text-sm font-medium">Haydovchi yuzi yuklanmasa</p>
         <p className="text-xs text-muted-foreground">
           Gate kompyuterida <code>relay-agent</code> va <code>relay-agent2</code> papkasiga
-          yangi <code>index.js</code> ni qo&apos;ying, keyin <code>npm start</code>. Chrome da
-          IP ochilishi yetarli emas — eski agent rasmlarni noto&apos;g&apos;ri JPEG qilib yuboradi.
+          yangi <code>index.js</code> ni qo&apos;ying, keyin <code>npm start</code> — logda
+          <code>Versiya 1.2.3</code> chiqishi kerak. 8 tadan ko&apos;p navbat bo&apos;lsa agent
+          o&apos;zi tozalaydi. Pechati bor haydovchilar o&apos;chmaydi.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -102,6 +117,30 @@ function AgentUpdateCard() {
             {busy === "index.js" ? <Loader2 className="animate-spin" /> : null}
             index.js
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="destructive" disabled={busy !== null}>
+                {busy === "clear" ? <Loader2 className="animate-spin" /> : null}
+                Navbatni tozalash
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Navbat va kutilgan haydovchilar</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Face ID ga yuborilmagan barcha navbat o&apos;chadi. Pechati yoki
+                  yozilgan yuzi yo&apos;q haydovchilar ham o&apos;chadi. Pul/pechat
+                  yozuvlari saqlanadi.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Bekor</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleClearQueue()}>
+                  Tozalash
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </CardContent>
     </Card>

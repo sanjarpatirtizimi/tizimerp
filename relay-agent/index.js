@@ -10,7 +10,8 @@ const {
 } = require("./acs-events");
 
 const enrollCooldownUntil = new Map();
-const AGENT_CODE_VERSION = "1.2.2";
+const AGENT_CODE_VERSION = "1.2.3";
+let lastClearAttemptAt = 0;
 
 function errorUrl(error) {
   return `${error.config?.baseURL || ""}${error.config?.url || ""}`;
@@ -315,6 +316,7 @@ async function main() {
   let pollsOk = 0;
   let lastError = null;
   let enrollmentBusy = false;
+  let stampBusy = false;
   let resolvedDeviceId = DEVICE_ID;
   let lastEmptyLogAt = 0;
   let lastSyncAt = Date.now();
@@ -344,6 +346,11 @@ async function main() {
         log(
           `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
         );
+        await resetStuckEnrollmentQueue(
+          api,
+          resolvedDeviceId,
+          status.pendingCount ?? 0,
+        );
       }
     } catch (error) {
       if (error.response?.status !== 404) throw error;
@@ -356,6 +363,7 @@ async function main() {
       log(
         `Server ulandi. Ro'yxat navbati: ${jobs.length} ta. Haydovchi qo'shilsa shu yerda chiqadi.`,
       );
+      await resetStuckEnrollmentQueue(api, DEVICE_ID, jobs.length);
     }
   } catch (error) {
     const status = error.response?.status;
@@ -372,7 +380,8 @@ async function main() {
     // Pechat first — do not wait behind enrollment / Render cold starts.
     // Do not poll AcsEvent while a face is uploading — the terminal handles
     // one ISAPI call at a time and both sides time out (20s pechat + enroll).
-    if (STAMP_POLL_ENABLED !== "false" && !enrollmentBusy) {
+    if (STAMP_POLL_ENABLED !== "false" && !enrollmentBusy && !stampBusy) {
+      stampBusy = true;
       try {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
@@ -385,11 +394,14 @@ async function main() {
           : error.message;
         lastError = message;
         log(`AcsEvent/pechat xatosi: ${message}`);
+      } finally {
+        stampBusy = false;
       }
     }
 
     if (
       !enrollmentBusy &&
+      !stampBusy &&
       Date.now() - lastEnrollmentAt >= enrollmentEveryMs
     ) {
       lastEnrollmentAt = Date.now();
@@ -447,6 +459,35 @@ async function main() {
   }
 }
 
+/**
+ * QR self-register flooded every Face ID with the same 20–30 jobs. A stuck
+ * queue plus overlapping AcsEvent calls makes the terminal time out forever.
+ * Clear the backlog once when it is already large; do not wipe 1–2 new jobs.
+ */
+async function resetStuckEnrollmentQueue(api, deviceId, pendingCount) {
+  if (!deviceId || pendingCount < 8) return;
+  if (Date.now() - lastClearAttemptAt < 15_000) return;
+  lastClearAttemptAt = Date.now();
+  try {
+    const { data } = await api.post(`/agent/${deviceId}/pending/clear`, null, {
+      timeout: 45000,
+    });
+    enrollCooldownUntil.clear();
+    log(
+      `Navbat noldan: ${data?.clearedJobs ?? 0} ta yuz yuklash o'chirildi, ` +
+        `${data?.removedDrivers ?? 0} ta kutilgan haydovchi (pechatsiz) o'chirildi.`,
+    );
+  } catch (error) {
+    if (error.response?.status === 404) {
+      log(
+        "Navbatni server hali tozalay olmaydi (eski API). Render yangilangach qayta uriniladi.",
+      );
+      return;
+    }
+    log(`Navbatni tozalab bo'lmadi: ${errorText(error)}`);
+  }
+}
+
 async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
   const { data: jobs } = await api.get(`/agent/${deviceId}/pending`, {
     timeout: 20000,
@@ -456,6 +497,14 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       log("Ro'yxat: navbat bo'sh (haydovchi qo'shilsa shu yerda chiqadi)");
       opts.onLoggedEmpty?.();
     }
+    return;
+  }
+
+  if (jobs.length >= 8) {
+    log(
+      `Navbat katta (${jobs.length} ta) — yuz yuklash to'xtatildi, navbat tozalanadi.`,
+    );
+    await resetStuckEnrollmentQueue(api, deviceId, jobs.length);
     return;
   }
 
@@ -469,6 +518,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     );
     return;
   }
+  const waiting = jobs.length - 1;
   if (waiting > 0) {
     log(
       `${jobs.length} ta haydovchi navbatda — hozir ${job.fullName}, yana ${waiting} ta kutadi.`,

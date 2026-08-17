@@ -37,4 +37,11 @@ export const devicesApi = {
       .then((r) => r.data),
   revokeAgentKey: (id: string) =>
     apiClient.delete<void>(`/devices/${id}/agent-key`).then((r) => r.data),
+
+  clearEnrollmentQueue: () =>
+    apiClient
+      .post<{ clearedJobs: number; removedDrivers: number }>(
+        "/devices/enrollment-queue/clear",
+      )
+      .then((r) => r.data),
 };

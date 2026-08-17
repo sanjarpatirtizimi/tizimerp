@@ -1,6 +1,6 @@
 {
   "name": "sanjar-patir-relay-agent",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "Runs on a device on the same local network as a Hikvision Face ID terminal. Polls the Sanjar Patir backend for newly-added drivers and pushes their photo straight to the terminal over the local network.",
   "main": "index.js",

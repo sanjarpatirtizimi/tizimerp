@@ -6,10 +6,15 @@ import { DevicesModule } from '../devices/devices.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 
 import { PublicRelayAgentController } from './public-relay-agent.controller';
+import { StaffEnrollmentQueueController } from './staff-enrollment-queue.controller';
 
 @Module({
   imports: [DevicesModule, WebhooksModule],
-  controllers: [AgentController, PublicRelayAgentController],
+  controllers: [
+    AgentController,
+    PublicRelayAgentController,
+    StaffEnrollmentQueueController,
+  ],
   providers: [AgentService, AgentKeyGuard],
 })
 export class AgentModule {}
