@@ -123,7 +123,9 @@ async function getDeviceTimeWindow(deviceClient, lookbackMs) {
     let offsetMinutes = -new Date().getTimezoneOffset();
     let end = new Date();
     try {
-      const res = await deviceClient.get("/ISAPI/System/time");
+      const res = await deviceClient.get("/ISAPI/System/time", {
+        timeout: 3000,
+      });
       const xml = typeof res.data === "string" ? res.data : "";
       const localMatch = xml.match(/<localTime>([^<]+)<\/localTime>/i);
       if (localMatch) {
@@ -169,7 +171,8 @@ async function postAcsEvent(deviceClient, cond) {
 }
 
 /**
- * Fetch face-success events, preferring the newest page when total > maxResults.
+ * Fetch face-success events. One page only — a second search would occupy
+ * the terminal again and often times out on these boxes.
  */
 async function fetchFaceRows(deviceClient, base) {
   const first = await postAcsEvent(deviceClient, {
@@ -189,24 +192,8 @@ async function fetchFaceRows(deviceClient, base) {
   let list = acs.InfoList || acs.infoList || [];
   if (!Array.isArray(list)) list = [];
 
-  // If more matches than one page, jump near the end to get newest events.
-  if (total > base.maxResults) {
-    const position = Math.max(0, total - base.maxResults);
-    const page = await postAcsEvent(deviceClient, {
-      ...base,
-      searchID: String(Date.now() + 1),
-      searchResultPosition: position,
-      minor: 75,
-    });
-    if (page.status < 400) {
-      const newer =
-        page.data?.AcsEvent?.InfoList ||
-        page.data?.AcsEvent?.infoList ||
-        [];
-      if (Array.isArray(newer) && newer.length) list = newer;
-    }
-  }
-
+  // A second page is another ISAPI round-trip. Short windows stay on one page
+  // so a hung search cannot occupy the terminal twice per poll.
   return { total, list };
 }
 
@@ -219,12 +206,12 @@ async function pollNewFaceEvents(deviceClient, log) {
   // Short window = faster AcsEvent query on the terminal.
   const { startTime, endTime } = await getDeviceTimeWindow(
     deviceClient,
-    3 * 60 * 1000,
+    60 * 1000,
   );
 
   const base = {
     searchResultPosition: 0,
-    maxResults: 30,
+    maxResults: 20,
     major: 5,
     startTime,
     endTime,

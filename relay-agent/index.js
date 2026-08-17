@@ -2,16 +2,42 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const { DigestHttpClient } = require("./digest-http-client");
-const {
-  pollNewFaceEvents,
-  enqueueEvents,
-  flushOutbox,
-} = require("./acs-events");
 
 const enrollCooldownUntil = new Map();
-const AGENT_CODE_VERSION = "1.2.3";
+const AGENT_CODE_VERSION = "1.2.4";
 let lastClearAttemptAt = 0;
+let lastCooldownLogAt = 0;
+
+function loadFaceIdSchedule() {
+  try {
+    return require("./faceid-schedule");
+  } catch {
+    return {
+      shouldPollStamp: (state) =>
+        state.stampEnabled !== false &&
+        !(state.pendingCount > 0) &&
+        !state.coolingDown &&
+        (state.now || Date.now()) >= (state.stampPauseUntil || 0),
+      stampBackoffMs: (n) =>
+        Math.min(15_000 * 2 ** (Math.max(1, Number(n) || 1) - 1), 120_000),
+    };
+  }
+}
+
+function loadDeviceLibs() {
+  const digestPath = require.resolve("./digest-http-client");
+  const acsPath = require.resolve("./acs-events");
+  delete require.cache[digestPath];
+  delete require.cache[acsPath];
+  const { DigestHttpClient } = require("./digest-http-client");
+  const acs = require("./acs-events");
+  return {
+    DigestHttpClient,
+    pollNewFaceEvents: acs.pollNewFaceEvents,
+    enqueueEvents: acs.enqueueEvents,
+    flushOutbox: acs.flushOutbox,
+  };
+}
 
 function errorUrl(error) {
   return `${error.config?.baseURL || ""}${error.config?.url || ""}`;
@@ -88,16 +114,32 @@ async function bootstrapHelperFiles() {
     "prepare-face-jpeg.js",
     "hikvision-multipart.js",
     "sync-agent-files.js",
+    "faceid-schedule.js",
+    "digest-http-client.js",
+    "acs-events.js",
   ];
+  const alwaysRefresh = new Set([
+    "faceid-schedule.js",
+    "digest-http-client.js",
+    "acs-events.js",
+  ]);
   for (const file of files) {
     const dest = path.join(__dirname, file);
-    if (fs.existsSync(dest) && fs.statSync(dest).size > 80) continue;
+    if (
+      !alwaysRefresh.has(file) &&
+      fs.existsSync(dest) &&
+      fs.statSync(dest).size > 80
+    ) {
+      continue;
+    }
     try {
       const { data } = await axios.get(`${AGENT_RAW_BASE}/${file}`, {
         timeout: 20000,
         responseType: "arraybuffer",
       });
-      fs.writeFileSync(dest, Buffer.from(data));
+      if (data && Buffer.from(data).length > 80) {
+        fs.writeFileSync(dest, Buffer.from(data));
+      }
     } catch {
       // offline — fallbacks in this file still enroll JPEGs
     }
@@ -281,6 +323,13 @@ async function main() {
   }
   acquireLock();
   prepareFaceJpeg = loadPrepareFaceJpeg();
+  const { shouldPollStamp, stampBackoffMs } = loadFaceIdSchedule();
+  const {
+    DigestHttpClient,
+    pollNewFaceEvents,
+    enqueueEvents,
+    flushOutbox,
+  } = loadDeviceLibs();
 
   const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
   const api = axios.create({
@@ -295,11 +344,12 @@ async function main() {
     DEVICE_PASSWORD,
     60000,
   );
+  // Fail-fast pechat: a hung AcsEvent must not occupy Face ID for 20s.
   const stampDeviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    20000,
+    8000,
   );
 
   const stampApi = axios.create({
@@ -309,14 +359,18 @@ async function main() {
   });
 
   const pollMs = Number(POLL_INTERVAL_MS) || 500;
+  const stampEveryMs = Number(process.env.STAMP_INTERVAL_MS) || 2000;
   let enrollmentEveryMs = 2_000;
   const heartbeatEveryMs = 20_000;
   let lastEnrollmentAt = 0;
   let lastHeartbeatAt = 0;
+  let lastStampAt = 0;
   let pollsOk = 0;
   let lastError = null;
-  let enrollmentBusy = false;
-  let stampBusy = false;
+  let pendingCount = 0;
+  let coolingDown = false;
+  let stampPauseUntil = 0;
+  let stampTimeouts = 0;
   let resolvedDeviceId = DEVICE_ID;
   let lastEmptyLogAt = 0;
   let lastSyncAt = Date.now();
@@ -325,11 +379,11 @@ async function main() {
   log(`Versiya ${AGENT_CODE_VERSION} — rasm: 4:2:0 JPEG (Jimp emas)`);
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
-  log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);
+  log(`Pechat oralig'i: ${stampEveryMs} ms (navbat bo'sh bo'lsa)`);
   log(
     STAMP_POLL_ENABLED === "false"
       ? "Pechat poll: o'chirilgan"
-      : "Pechat poll: LAN AcsEvent (ishonchli yo'l)",
+      : "Pechat poll: navbatda haydovchi bo'lsa to'xtaydi (Face ID band bo'lmasin)",
   );
   log("Haydovchi qo'shilsa logda 'yangi haydovchi' chiqadi. Oynani yopmang.");
   console.log("");
@@ -346,10 +400,11 @@ async function main() {
         log(
           `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
         );
+        pendingCount = Number(status.pendingCount) || 0;
         await resetStuckEnrollmentQueue(
           api,
           resolvedDeviceId,
-          status.pendingCount ?? 0,
+          pendingCount,
         );
       }
     } catch (error) {
@@ -363,6 +418,7 @@ async function main() {
       log(
         `Server ulandi. Ro'yxat navbati: ${jobs.length} ta. Haydovchi qo'shilsa shu yerda chiqadi.`,
       );
+      pendingCount = jobs.length;
       await resetStuckEnrollmentQueue(api, DEVICE_ID, jobs.length);
     }
   } catch (error) {
@@ -377,62 +433,73 @@ async function main() {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Pechat first — do not wait behind enrollment / Render cold starts.
-    // Do not poll AcsEvent while a face is uploading — the terminal handles
-    // one ISAPI call at a time and both sides time out (20s pechat + enroll).
-    if (STAMP_POLL_ENABLED !== "false" && !enrollmentBusy && !stampBusy) {
-      stampBusy = true;
+    // Enroll first. AcsEvent must not run for 8–20s before a waiting face
+    // upload — the terminal handles one ISAPI call and both sides time out.
+    if (Date.now() - lastEnrollmentAt >= enrollmentEveryMs) {
+      lastEnrollmentAt = Date.now();
+      try {
+        const result = await pollOnce(
+          api,
+          deviceClient,
+          backendOrigin,
+          resolvedDeviceId,
+          {
+            shouldLogEmpty: Date.now() - lastEmptyLogAt > 15_000,
+            onLoggedEmpty: () => {
+              lastEmptyLogAt = Date.now();
+            },
+          },
+        );
+        pendingCount = result?.pendingCount ?? 0;
+        coolingDown = Boolean(result?.coolingDown);
+        enrollmentEveryMs = 2_000;
+      } catch (error) {
+        const message = errorText(error);
+        if (isTransientNetworkError(error)) {
+          enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 15_000);
+          log(
+            `Ro'yxatga olish: server band — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
+          );
+        } else {
+          log(`Ro'yxatga olish poll xatosi: ${message}`);
+        }
+      }
+    }
+
+    if (
+      shouldPollStamp({
+        stampEnabled: STAMP_POLL_ENABLED !== "false",
+        pendingCount,
+        coolingDown,
+        stampPauseUntil,
+        lastStampAt,
+        stampEveryMs,
+        now: Date.now(),
+      })
+    ) {
+      lastStampAt = Date.now();
       try {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
         await flushOutbox(stampApi, resolvedDeviceId, log);
         pollsOk += 1;
         lastError = null;
+        stampTimeouts = 0;
       } catch (error) {
         const message = error.response
           ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
           : error.message;
         lastError = message;
-        log(`AcsEvent/pechat xatosi: ${message}`);
-      } finally {
-        stampBusy = false;
+        stampTimeouts += 1;
+        const wait = stampBackoffMs(stampTimeouts);
+        stampPauseUntil = Date.now() + wait;
+        log(
+          `AcsEvent/pechat xatosi: ${message} — ${Math.round(wait / 1000)}s dam (yuz yuklash uchun).`,
+        );
       }
     }
 
-    if (
-      !enrollmentBusy &&
-      !stampBusy &&
-      Date.now() - lastEnrollmentAt >= enrollmentEveryMs
-    ) {
-      lastEnrollmentAt = Date.now();
-      enrollmentBusy = true;
-      // Never block pechat behind Render / Face ID enroll.
-      void pollOnce(api, deviceClient, backendOrigin, resolvedDeviceId, {
-        shouldLogEmpty: Date.now() - lastEmptyLogAt > 15_000,
-        onLoggedEmpty: () => {
-          lastEmptyLogAt = Date.now();
-        },
-      })
-        .then(() => {
-          enrollmentEveryMs = 2_000;
-        })
-        .catch((error) => {
-          const message = errorText(error);
-          if (isTransientNetworkError(error)) {
-            enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 15_000);
-            log(
-              `Ro'yxatga olish: server band — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
-            );
-          } else {
-            log(`Ro'yxatga olish poll xatosi: ${message}`);
-          }
-        })
-        .finally(() => {
-          enrollmentBusy = false;
-        });
-    }
-
-    if (!enrollmentBusy && Date.now() - lastSyncAt > 90_000) {
+    if (Date.now() - lastSyncAt > 90_000) {
       lastSyncAt = Date.now();
       try {
         const sync = require("./sync-agent-files");
@@ -450,12 +517,14 @@ async function main() {
       lastHeartbeatAt = Date.now();
       if (lastError) {
         log(`ishlayapti… oxirgi xato: ${lastError}`);
+      } else if (pendingCount > 0) {
+        log(`ishlayapti… yuz yozilmoqda (navbat: ${pendingCount})`);
       } else {
         log(`ishlayapti… Face ID so'ralmoqda (${pollsOk} marta OK)`);
       }
     }
 
-    await sleep(pollMs);
+    await sleep(coolingDown ? 5_000 : pollMs);
   }
 }
 
@@ -497,7 +566,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       log("Ro'yxat: navbat bo'sh (haydovchi qo'shilsa shu yerda chiqadi)");
       opts.onLoggedEmpty?.();
     }
-    return;
+    return { pendingCount: 0, coolingDown: false };
   }
 
   if (jobs.length >= 8) {
@@ -505,7 +574,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       `Navbat katta (${jobs.length} ta) — yuz yuklash to'xtatildi, navbat tozalanadi.`,
     );
     await resetStuckEnrollmentQueue(api, deviceId, jobs.length);
-    return;
+    return { pendingCount: jobs.length, coolingDown: false };
   }
 
   const now = Date.now();
@@ -513,10 +582,13 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     (item) => (enrollCooldownUntil.get(item.registrationId) || 0) <= now,
   );
   if (!job) {
-    log(
-      `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout).`,
-    );
-    return;
+    if (now - lastCooldownLogAt > 30_000) {
+      lastCooldownLogAt = now;
+      log(
+        `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout). Pechat so'ralmaydi — Face ID dam oladi.`,
+      );
+    }
+    return { pendingCount: jobs.length, coolingDown: true };
   }
   const waiting = jobs.length - 1;
   if (waiting > 0) {
@@ -557,20 +629,21 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
         hikvisionFaceId: employeeNo,
       });
       log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
+      return { pendingCount: Math.max(0, jobs.length - 1), coolingDown: false };
     } catch (error) {
       const message = describeEnrollError(error);
       if (isTransientNetworkError(error)) {
         enrollCooldownUntil.set(job.registrationId, Date.now() + 120_000);
         if (isFaceIdNetworkError(error)) {
           log(
-            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa boshqa haydovchilarga o'tamiz.`,
+            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa dam — pechat ham to'xtatiladi.`,
           );
         } else {
           log(
             `  · ${job.fullName}: server (Render) javob bermadi — keyinroq qayta. (${errorText(error)})`,
           );
         }
-        return;
+        return { pendingCount: jobs.length, coolingDown: true };
       }
       log(`  ✗ ${job.fullName}: ${message}`);
       await api
@@ -579,6 +652,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
           error: message.slice(0, 500),
         })
         .catch(() => undefined);
+      return { pendingCount: Math.max(0, jobs.length - 1), coolingDown: false };
     }
   }
 }

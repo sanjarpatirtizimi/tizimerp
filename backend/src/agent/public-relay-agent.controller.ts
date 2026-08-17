@@ -8,6 +8,7 @@ const ALLOWED = new Set([
   'prepare-face-jpeg.js',
   'hikvision-multipart.js',
   'sync-agent-files.js',
+  'faceid-schedule.js',
   'digest-http-client.js',
   'acs-events.js',
   'package.json',

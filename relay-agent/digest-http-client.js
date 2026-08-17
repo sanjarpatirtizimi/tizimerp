@@ -1,3 +1,4 @@
+const http = require("http");
 const axios = require("axios");
 const { createHash, randomBytes } = require("crypto");
 const { Readable } = require("stream");
@@ -5,6 +6,10 @@ const { Readable } = require("stream");
 /**
  * Minimal HTTP Digest Authentication client for Hikvision ISAPI devices.
  * Buffers stream/FormData bodies so a 401 digest retry can resend the same bytes.
+ *
+ * Face ID boxes typically serve one HTTP request at a time. A shared keep-alive
+ * pool leaves a timed-out AcsEvent socket occupying the only slot, so the next
+ * face upload also hangs. Each client gets its own agent and drops it on timeout.
  */
 class DigestHttpClient {
   constructor(baseURL, username, password, timeoutMs = 10000) {
@@ -12,9 +17,11 @@ class DigestHttpClient {
     this.password = password;
     this.cachedChallenge = null;
     this.nonceCount = 0;
+    this.timeoutMs = timeoutMs;
     this.http = axios.create({
       baseURL,
       timeout: timeoutMs,
+      httpAgent: this.createAgent(),
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
       // Keep binary multipart intact, but still JSON-stringify plain objects.
@@ -49,23 +56,40 @@ class DigestHttpClient {
     });
   }
 
-  get(url) {
-    return this.execute("GET", url, {});
+  createAgent() {
+    return new http.Agent({
+      keepAlive: false,
+      maxSockets: 1,
+      timeout: this.timeoutMs,
+    });
   }
 
-  put(url, body) {
-    return this.execute("PUT", url, body);
+  resetTransport() {
+    this.cachedChallenge = null;
+    const prev = this.http.defaults.httpAgent;
+    if (prev && typeof prev.destroy === "function") {
+      prev.destroy();
+    }
+    this.http.defaults.httpAgent = this.createAgent();
   }
 
-  post(url, body) {
-    return this.execute("POST", url, body);
+  get(url, extra = {}) {
+    return this.execute("GET", url, {}, extra);
   }
 
-  delete(url, body = {}) {
-    return this.execute("DELETE", url, body);
+  put(url, body, extra = {}) {
+    return this.execute("PUT", url, body, extra);
   }
 
-  async execute(method, url, body) {
+  post(url, body, extra = {}) {
+    return this.execute("POST", url, body, extra);
+  }
+
+  delete(url, body = {}, extra = {}) {
+    return this.execute("DELETE", url, body, extra);
+  }
+
+  async execute(method, url, body, extra = {}) {
     const prepared = await this.prepareBody(body);
     const config = {
       method,
@@ -73,6 +97,7 @@ class DigestHttpClient {
       data: prepared.data,
       headers: { ...prepared.headers },
     };
+    if (extra.timeout) config.timeout = extra.timeout;
 
     if (this.cachedChallenge) {
       config.headers = {
@@ -85,22 +110,27 @@ class DigestHttpClient {
       };
     }
 
-    let response = await this.http.request(config);
+    try {
+      let response = await this.http.request(config);
 
-    if (response.status === 401) {
-      const challenge = this.parseChallenge(response.headers["www-authenticate"]);
-      if (!challenge) return response;
-      this.cachedChallenge = challenge;
-      // Resend the SAME buffered bytes — critical for multipart face uploads.
-      config.headers = {
-        ...prepared.headers,
-        Authorization: this.buildAuthorizationHeader(method, url, challenge),
-      };
-      config.data = prepared.data;
-      response = await this.http.request(config);
+      if (response.status === 401) {
+        const challenge = this.parseChallenge(response.headers["www-authenticate"]);
+        if (!challenge) return response;
+        this.cachedChallenge = challenge;
+        // Resend the SAME buffered bytes — critical for multipart face uploads.
+        config.headers = {
+          ...prepared.headers,
+          Authorization: this.buildAuthorizationHeader(method, url, challenge),
+        };
+        config.data = prepared.data;
+        response = await this.http.request(config);
+      }
+
+      return response;
+    } catch (error) {
+      this.resetTransport();
+      throw error;
     }
-
-    return response;
   }
 
   async prepareBody(body) {

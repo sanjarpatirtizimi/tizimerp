@@ -2,13 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const AGENT_CODE_VERSION = "1.2.3";
+const AGENT_CODE_VERSION = "1.2.4";
 
 const FILES = [
   "index.js",
   "prepare-face-jpeg.js",
   "hikvision-multipart.js",
   "sync-agent-files.js",
+  "faceid-schedule.js",
+  "digest-http-client.js",
+  "acs-events.js",
 ];
 
 function updateBases(apiBaseUrl) {
