@@ -22,6 +22,7 @@ avtomatik bajaradi:
    ```
    npm install
    ```
+   (`sharp` kerak — Windows da odatda tayyor binary tushadi. Xato bo'lsa [VC++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) ni o'rnating.)
 4. `.env.example` → `.env` qilib to'ldiring:
    - `API_BASE_URL` — backend (`.../api`)
    - `DEVICE_ID` + `AGENT_KEY` — ilova → **Qurilmalar** → Agent kaliti
@@ -52,3 +53,10 @@ Task Scheduler → At log on → `node index.js`, Start in = `relay-agent` papka
 ## Bitta qurilma = bitta agent
 
 Har Face ID uchun alohida `.env` (o'z `DEVICE_ID` / `AGENT_KEY` / IP).
+**Bitta qurilmaga ikkita `npm start` oynasi ochmang** — agent o'zi qulflaydi.
+
+## Xatolar
+
+- `connect ECONNREFUSED 192.168.x.x:80` — PC Face ID bilan bir Wi‑Fi da emas, yoki `DEVICE_IP` eskirgan. Qurilma veb-sahifasini brauzerda ochib IP ni tekshiring. Qurilma o'chiq yoki port 80 emas (ba'zan 8000/443).
+- `PicFeaturePoints` / `SubpicAnalysisModelingError` — Face ID rasmni qabul qildi, lekin yuz nuqtalarini chiqara olmadi. Agent endi rasmlarni **4:2:0 JPEG** qilib yuboradi (eski Jimp 4:4:4 qilib yuborardi va qurilma rad etardi). Agar yana chiqsa: yaqin, oldindan, bitta yuz, yaxshi yorug'.
+- `HTTP 400 Invalid Content` — rasm formati yoki yuz modellashtirish xatosi; logdagi `statusString` / `errorMsg` ga qarang.

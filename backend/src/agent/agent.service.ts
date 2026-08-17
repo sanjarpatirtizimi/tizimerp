@@ -28,9 +28,15 @@ export class AgentService {
         deviceId,
         hikvisionFaceId: null,
         pairingExpiresAt: null,
-        syncStatus: {
-          in: [SyncStatus.PENDING, SyncStatus.FAILED],
-        },
+        OR: [
+          { syncStatus: SyncStatus.PENDING },
+          // Modeling errors are not transient, but a JPEG-format fix should
+          // retry FAILED jobs. Wait 60s so a bad photo cannot hammer FDLib.
+          {
+            syncStatus: SyncStatus.FAILED,
+            updatedAt: { lte: new Date(Date.now() - 60_000) },
+          },
+        ],
         driver: {
           status: { not: DriverStatus.BLOCKED },
         },

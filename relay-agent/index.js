@@ -1,12 +1,17 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
-const Jimp = require("jimp");
 const { DigestHttpClient } = require("./digest-http-client");
 const {
   pollNewFaceEvents,
   enqueueEvents,
   flushOutbox,
 } = require("./acs-events");
+const { prepareFaceJpeg } = require("./prepare-face-jpeg");
+const { buildHikvisionFaceMultipart } = require("./hikvision-multipart");
+
+const LOCK_PATH = path.join(__dirname, "agent.lock");
 
 const {
   API_BASE_URL,
@@ -55,6 +60,53 @@ function errorText(error) {
   return error.message || String(error);
 }
 
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireLock() {
+  const pid = process.pid;
+  try {
+    fs.writeFileSync(LOCK_PATH, String(pid), { flag: "wx" });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const prev = Number(String(fs.readFileSync(LOCK_PATH, "utf8")).trim());
+    if (prev && isPidAlive(prev)) {
+      console.error(
+        `Relay agent allaqachon ishlayapti (PID ${prev}). Ikkinchi CMD oynasini yoping.`,
+      );
+      process.exit(1);
+    }
+    fs.writeFileSync(LOCK_PATH, String(pid));
+  }
+  const release = () => {
+    try {
+      if (
+        fs.existsSync(LOCK_PATH) &&
+        String(fs.readFileSync(LOCK_PATH, "utf8")).trim() === String(pid)
+      ) {
+        fs.unlinkSync(LOCK_PATH);
+      }
+    } catch {
+      // ignore
+    }
+  };
+  process.on("exit", release);
+  process.on("SIGINT", () => {
+    release();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    release();
+    process.exit(0);
+  });
+}
+
 /** Server/network glitch — keep job PENDING and retry. Do not mark FAILED. */
 function isTransientNetworkError(error) {
   const code = error.code || "";
@@ -65,8 +117,12 @@ function isTransientNetworkError(error) {
     code === "ETIMEDOUT" ||
     code === "ENOTFOUND" ||
     code === "EAI_AGAIN" ||
+    code === "ECONNREFUSED" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
     /timeout of \d+ms exceeded/i.test(msg) ||
     /ECONNRESET/i.test(msg) ||
+    /ECONNREFUSED/i.test(msg) ||
     /socket hang up/i.test(msg) ||
     /HTTP 502/.test(msg) ||
     /HTTP 503/.test(msg) ||
@@ -74,8 +130,23 @@ function isTransientNetworkError(error) {
   );
 }
 
+function describeEnrollError(error) {
+  const message = errorText(error);
+  if (
+    /PicFeaturePoints/i.test(message) ||
+    /SubpicAnalysisModelingError/i.test(message)
+  ) {
+    return (
+      `${message} — Face ID yuz nuqtalarini o'qiy olmadi. ` +
+      `Aniq, oldindan olingan yagona yuz rasmini qayta yuklang (ko'zoynaksiz, niqobsiz).`
+    );
+  }
+  return message;
+}
+
 async function main() {
   assertConfig();
+  acquireLock();
 
   const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
   const api = axios.create({
@@ -254,9 +325,12 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
         throw new Error("Rasm fayli bo'sh yoki juda kichik");
       }
 
-      const photoBuffer = await prepareFaceJpeg(rawPhoto);
+      const prepared = await prepareFaceJpeg(rawPhoto);
+      const photoBuffer = prepared.buffer;
       log(
-        `  rasm: ${Math.round(rawPhoto.length / 1024)} KB → ${Math.round(photoBuffer.length / 1024)} KB (Face ID uchun)`,
+        `  rasm: ${Math.round(rawPhoto.length / 1024)} KB → ${Math.round(photoBuffer.length / 1024)} KB ` +
+          `(${prepared.width}x${prepared.height} ${prepared.chroma}` +
+          `${prepared.reencoded ? "" : ", original"})`,
       );
 
       await enrollOnDevice(deviceClient, employeeNo, job.fullName, photoBuffer);
@@ -267,7 +341,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       });
       log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
     } catch (error) {
-      const message = errorText(error);
+      const message = describeEnrollError(error);
       if (isTransientNetworkError(error)) {
         log(
           `  · ${job.fullName}: server timeout — keyinroq qayta uriniladi (FAILED yozilmaydi)`,
@@ -392,73 +466,6 @@ async function enrollOnDevice(deviceClient, employeeNo, fullName, photoBuffer) {
       `FDLib face upload: HTTP ${faceResponse.status} ${JSON.stringify(faceResponse.data)}`,
     );
   }
-}
-
-/**
- * Normalize any common phone image (JPEG/PNG/WebP) into a small frontal JPEG
- * Face ID terminals accept (~max 600px, under ~180 KB).
- */
-async function prepareFaceJpeg(input) {
-  try {
-    const image = await Jimp.read(input);
-    const maxSide = 640;
-    const w = image.bitmap.width;
-    const h = image.bitmap.height;
-    if (w > maxSide || h > maxSide) {
-      if (w >= h) image.resize(maxSide, Jimp.AUTO);
-      else image.resize(Jimp.AUTO, maxSide);
-    }
-
-    let quality = 85;
-    let out = await image.quality(quality).getBufferAsync(Jimp.MIME_JPEG);
-    while (out.length > 180 * 1024 && quality > 40) {
-      quality -= 10;
-      out = await image.quality(quality).getBufferAsync(Jimp.MIME_JPEG);
-    }
-    return out;
-  } catch (error) {
-    throw new Error(
-      `Rasmni Face ID formatiga o'girib bo'lmadi: ${error.message}. Boshqa aniq yuz rasmini JPEG qilib yuklang.`,
-    );
-  }
-}
-
-/**
- * Hikvision is picky about multipart layout. Build the exact byte layout
- * documented for FaceDataRecord / FDSetUp (FaceImage, not img).
- */
-function buildHikvisionFaceMultipart(employeeNo, photoBuffer) {
-  const meta = JSON.stringify({
-    faceLibType: "blackFD",
-    FDID: "1",
-    FPID: employeeNo,
-  });
-  const boundary = `----hik${Date.now().toString(16)}`;
-  const CRLF = "\r\n";
-  const head =
-    `--${boundary}${CRLF}` +
-    `Content-Disposition: form-data; name="FaceDataRecord"${CRLF}` +
-    `Content-Type: application/json${CRLF}` +
-    `${CRLF}` +
-    meta +
-    `${CRLF}--${boundary}${CRLF}` +
-    `Content-Disposition: form-data; name="FaceImage"; filename="face.jpg"${CRLF}` +
-    `Content-Type: image/jpeg${CRLF}` +
-    `${CRLF}`;
-  const tail = `${CRLF}--${boundary}--${CRLF}`;
-  const data = Buffer.concat([
-    Buffer.from(head, "utf8"),
-    photoBuffer,
-    Buffer.from(tail, "utf8"),
-  ]);
-
-  return {
-    data,
-    headers: {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
-      "Content-Length": String(data.length),
-    },
-  };
 }
 
 function isIsapiFailure(response) {
