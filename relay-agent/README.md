@@ -22,6 +22,7 @@ avtomatik bajaradi:
    ```
    npm install
    ```
+   (`sharp` kerak — Windows da odatda tayyor binary tushadi. Xato bo'lsa [VC++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) ni o'rnating.)
 4. `.env.example` → `.env` qilib to'ldiring:
    - `API_BASE_URL` — backend (`.../api`)
    - `DEVICE_ID` + `AGENT_KEY` — ilova → **Qurilmalar** → Agent kaliti
@@ -52,3 +53,11 @@ Task Scheduler → At log on → `node index.js`, Start in = `relay-agent` papka
 ## Bitta qurilma = bitta agent
 
 Har Face ID uchun alohida `.env` (o'z `DEVICE_ID` / `AGENT_KEY` / IP).
+**Bitta qurilmaga ikkita `npm start` oynasi ochmang** — agent o'zi qulflaydi.
+
+## Xatolar
+
+- Chrome da `http://192.168.x.x` ochilishi faqat qurilma yoniqligini bildiradi. Face yuklash boshqa API (`/ISAPI/...`). Chrome ishlasa ham `PicFeaturePoints` chiqishi mumkin.
+- `connect ECONNREFUSED` yoki `timeout of 8000ms` — PC Face ID bilan bir Wi‑Fi da emas, IP eskirgan, yoki qurilma sekin. Brauzerda sahifa ochilsa, IP odatda to'g'ri.
+- `PicFeaturePoints` / `SubpicAnalysisModelingError` — Face ID rasmni qabul qildi, lekin yuz nuqtalarini chiqara olmadi. Agent **1.1.0** rasmlarni **4:2:0 JPEG** qilib yuboradi (eski Jimp 4:4:4 qilib yuborardi). Ishga tushganda logda `Versiya 1.1.0` bo'lishi shart. `rasm: ... (Face ID uchun)` — bu eski kod, yangilang.
+- `HTTP 400 Invalid Content` — rasm formati yoki yuz modellashtirish xatosi; logdagi `statusString` / `errorMsg` ga qarang.

@@ -1,12 +1,109 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
-const Jimp = require("jimp");
 const { DigestHttpClient } = require("./digest-http-client");
 const {
   pollNewFaceEvents,
   enqueueEvents,
   flushOutbox,
 } = require("./acs-events");
+
+const enrollCooldownUntil = new Map();
+const AGENT_CODE_VERSION = "1.2.4";
+let lastClearAttemptAt = 0;
+
+function errorUrl(error) {
+  return `${error.config?.baseURL || ""}${error.config?.url || ""}`;
+}
+
+function isFaceIdNetworkError(error) {
+  const url = errorUrl(error);
+  const msg = errorText(error);
+  return Boolean(
+    (DEVICE_IP && url.includes(String(DEVICE_IP))) ||
+      /\/ISAPI\//i.test(url) ||
+      /ECONNREFUSED/i.test(msg),
+  );
+}
+const LOCK_PATH = path.join(__dirname, "agent.lock");
+const AGENT_RAW_BASE =
+  "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/main/relay-agent";
+
+function buildHikvisionFaceMultipartFallback(employeeNo, photoBuffer) {
+  const meta = JSON.stringify({
+    faceLibType: "blackFD",
+    FDID: "1",
+    FPID: String(employeeNo),
+  });
+  const metaBytes = Buffer.from(meta, "utf8");
+  const boundary = `----hik${Date.now().toString(16)}`;
+  const CRLF = "\r\n";
+  const head =
+    `--${boundary}${CRLF}` +
+    `Content-Disposition: form-data; name="FaceDataRecord"${CRLF}` +
+    `Content-Type: application/json${CRLF}` +
+    `Content-Length: ${metaBytes.length}${CRLF}` +
+    `${CRLF}`;
+  const mid =
+    `${CRLF}--${boundary}${CRLF}` +
+    `Content-Disposition: form-data; name="FaceImage"; filename="face.jpg"${CRLF}` +
+    `Content-Type: image/jpeg${CRLF}` +
+    `Content-Length: ${photoBuffer.length}${CRLF}` +
+    `${CRLF}`;
+  const tail = `${CRLF}--${boundary}--${CRLF}`;
+  const data = Buffer.concat([
+    Buffer.from(head, "utf8"),
+    metaBytes,
+    Buffer.from(mid, "utf8"),
+    photoBuffer,
+    Buffer.from(tail, "utf8"),
+  ]);
+  return {
+    data,
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(data.length),
+    },
+  };
+}
+
+function loadMultipart() {
+  try {
+    return require("./hikvision-multipart").buildHikvisionFaceMultipart;
+  } catch {
+    return buildHikvisionFaceMultipartFallback;
+  }
+}
+
+let buildHikvisionFaceMultipart = loadMultipart();
+let prepareFaceJpeg = async (input) => {
+  const fn = loadPrepareFaceJpeg();
+  prepareFaceJpeg = fn;
+  return fn(input);
+};
+
+async function bootstrapHelperFiles() {
+  const files = [
+    "prepare-face-jpeg.js",
+    "hikvision-multipart.js",
+    "sync-agent-files.js",
+  ];
+  for (const file of files) {
+    const dest = path.join(__dirname, file);
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 80) continue;
+    try {
+      const { data } = await axios.get(`${AGENT_RAW_BASE}/${file}`, {
+        timeout: 20000,
+        responseType: "arraybuffer",
+      });
+      fs.writeFileSync(dest, Buffer.from(data));
+    } catch {
+      // offline — fallbacks in this file still enroll JPEGs
+    }
+  }
+  buildHikvisionFaceMultipart = loadMultipart();
+}
 
 const {
   API_BASE_URL,
@@ -55,6 +152,56 @@ function errorText(error) {
   return error.message || String(error);
 }
 
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireLock() {
+  const pid = process.pid;
+  try {
+    fs.writeFileSync(LOCK_PATH, String(pid), { flag: "wx" });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const prev = Number(String(fs.readFileSync(LOCK_PATH, "utf8")).trim());
+    if (prev && isPidAlive(prev)) {
+      console.error(
+        `Shu papkada relay agent allaqachon ishlayapti (PID ${prev}). Shu papkadagi ikkinchi CMD ni yoping.`,
+      );
+      console.error(
+        "Boshqa Face ID uchun alohida papka (masalan relay-agent2) ishlataverasiz.",
+      );
+      process.exit(1);
+    }
+    fs.writeFileSync(LOCK_PATH, String(pid));
+  }
+  const release = () => {
+    try {
+      if (
+        fs.existsSync(LOCK_PATH) &&
+        String(fs.readFileSync(LOCK_PATH, "utf8")).trim() === String(pid)
+      ) {
+        fs.unlinkSync(LOCK_PATH);
+      }
+    } catch {
+      // ignore
+    }
+  };
+  process.on("exit", release);
+  process.on("SIGINT", () => {
+    release();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    release();
+    process.exit(0);
+  });
+}
+
 /** Server/network glitch — keep job PENDING and retry. Do not mark FAILED. */
 function isTransientNetworkError(error) {
   const code = error.code || "";
@@ -65,8 +212,12 @@ function isTransientNetworkError(error) {
     code === "ETIMEDOUT" ||
     code === "ENOTFOUND" ||
     code === "EAI_AGAIN" ||
+    code === "ECONNREFUSED" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
     /timeout of \d+ms exceeded/i.test(msg) ||
     /ECONNRESET/i.test(msg) ||
+    /ECONNREFUSED/i.test(msg) ||
     /socket hang up/i.test(msg) ||
     /HTTP 502/.test(msg) ||
     /HTTP 503/.test(msg) ||
@@ -74,8 +225,62 @@ function isTransientNetworkError(error) {
   );
 }
 
+function loadPrepareFaceJpeg() {
+  try {
+    const abs = require.resolve("./prepare-face-jpeg");
+    delete require.cache[abs];
+    return require("./prepare-face-jpeg").prepareFaceJpeg;
+  } catch {
+    return async function fallbackPrepareFaceJpeg(input) {
+      if (!Buffer.isBuffer(input) || input.length < 100) {
+        throw new Error("Rasm fayli bo'sh yoki juda kichik");
+      }
+      if (input[0] === 0xff && input[1] === 0xd8) {
+        return {
+          buffer: input,
+          width: 0,
+          height: 0,
+          chroma: "original-jpeg",
+          reencoded: false,
+        };
+      }
+      throw new Error(
+        "Rasm JPEG emas. Haydovchiga aniq yuz rasmini JPEG qilib yuklang.",
+      );
+    };
+  }
+}
+
+function describeEnrollError(error) {
+  const message = errorText(error);
+  if (
+    /PicFeaturePoints/i.test(message) ||
+    /SubpicAnalysisModelingError/i.test(message)
+  ) {
+    return (
+      `${message} — Face ID yuz nuqtalarini o'qiy olmadi. ` +
+      `Aniq, oldindan olingan yagona yuz rasmini qayta yuklang (ko'zoynaksiz, niqobsiz).`
+    );
+  }
+  return message;
+}
+
 async function main() {
   assertConfig();
+  await bootstrapHelperFiles();
+  let synced = { updated: false };
+  try {
+    const sync = require("./sync-agent-files");
+    synced = await sync.syncAgentFiles(API_BASE_URL, log);
+    if (synced.updated) {
+      sync.respawnSelf();
+      return;
+    }
+  } catch {
+    // first run without sync-agent-files.js
+  }
+  acquireLock();
+  prepareFaceJpeg = loadPrepareFaceJpeg();
 
   const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
   const api = axios.create({
@@ -88,13 +293,13 @@ async function main() {
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    30000,
+    60000,
   );
   const stampDeviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    8000,
+    20000,
   );
 
   const stampApi = axios.create({
@@ -111,10 +316,13 @@ async function main() {
   let pollsOk = 0;
   let lastError = null;
   let enrollmentBusy = false;
+  let stampBusy = false;
   let resolvedDeviceId = DEVICE_ID;
   let lastEmptyLogAt = 0;
+  let lastSyncAt = Date.now();
 
   log("Sanjar Patir relay agent ishga tushdi.");
+  log(`Versiya ${AGENT_CODE_VERSION} — rasm: 4:2:0 JPEG (Jimp emas)`);
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);
@@ -138,6 +346,11 @@ async function main() {
         log(
           `Server qurilmani tanidi: ${status.name} (${status.deviceId}) — navbat: ${status.pendingCount ?? 0}`,
         );
+        await resetStuckEnrollmentQueue(
+          api,
+          resolvedDeviceId,
+          status.pendingCount ?? 0,
+        );
       }
     } catch (error) {
       if (error.response?.status !== 404) throw error;
@@ -150,6 +363,7 @@ async function main() {
       log(
         `Server ulandi. Ro'yxat navbati: ${jobs.length} ta. Haydovchi qo'shilsa shu yerda chiqadi.`,
       );
+      await resetStuckEnrollmentQueue(api, DEVICE_ID, jobs.length);
     }
   } catch (error) {
     const status = error.response?.status;
@@ -164,7 +378,10 @@ async function main() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // Pechat first — do not wait behind enrollment / Render cold starts.
-    if (STAMP_POLL_ENABLED !== "false") {
+    // Do not poll AcsEvent while a face is uploading — the terminal handles
+    // one ISAPI call at a time and both sides time out (20s pechat + enroll).
+    if (STAMP_POLL_ENABLED !== "false" && !enrollmentBusy && !stampBusy) {
+      stampBusy = true;
       try {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
@@ -177,11 +394,14 @@ async function main() {
           : error.message;
         lastError = message;
         log(`AcsEvent/pechat xatosi: ${message}`);
+      } finally {
+        stampBusy = false;
       }
     }
 
     if (
       !enrollmentBusy &&
+      !stampBusy &&
       Date.now() - lastEnrollmentAt >= enrollmentEveryMs
     ) {
       lastEnrollmentAt = Date.now();
@@ -212,6 +432,20 @@ async function main() {
         });
     }
 
+    if (!enrollmentBusy && Date.now() - lastSyncAt > 90_000) {
+      lastSyncAt = Date.now();
+      try {
+        const sync = require("./sync-agent-files");
+        const again = await sync.syncAgentFiles(API_BASE_URL, log);
+        if (again.updated) {
+          sync.respawnSelf();
+          return;
+        }
+      } catch {
+        // keep running
+      }
+    }
+
     if (Date.now() - lastHeartbeatAt >= heartbeatEveryMs) {
       lastHeartbeatAt = Date.now();
       if (lastError) {
@@ -225,9 +459,38 @@ async function main() {
   }
 }
 
+/**
+ * QR self-register flooded every Face ID with the same 20–30 jobs. A stuck
+ * queue plus overlapping AcsEvent calls makes the terminal time out forever.
+ * Clear the backlog once when it is already large; do not wipe 1–2 new jobs.
+ */
+async function resetStuckEnrollmentQueue(api, deviceId, pendingCount) {
+  if (!deviceId || pendingCount < 8) return;
+  if (Date.now() - lastClearAttemptAt < 15_000) return;
+  lastClearAttemptAt = Date.now();
+  try {
+    const { data } = await api.post(`/agent/${deviceId}/pending/clear`, null, {
+      timeout: 45000,
+    });
+    enrollCooldownUntil.clear();
+    log(
+      `Navbat noldan: ${data?.clearedJobs ?? 0} ta yuz yuklash o'chirildi, ` +
+        `${data?.removedDrivers ?? 0} ta kutilgan haydovchi (pechatsiz) o'chirildi.`,
+    );
+  } catch (error) {
+    if (error.response?.status === 404) {
+      log(
+        "Navbatni server hali tozalay olmaydi (eski API). Render yangilangach qayta uriniladi.",
+      );
+      return;
+    }
+    log(`Navbatni tozalab bo'lmadi: ${errorText(error)}`);
+  }
+}
+
 async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
   const { data: jobs } = await api.get(`/agent/${deviceId}/pending`, {
-    timeout: 12000,
+    timeout: 20000,
   });
   if (!Array.isArray(jobs) || jobs.length === 0) {
     if (opts.shouldLogEmpty) {
@@ -237,9 +500,34 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     return;
   }
 
-  log(`${jobs.length} ta yangi haydovchi topildi.`);
+  if (jobs.length >= 8) {
+    log(
+      `Navbat katta (${jobs.length} ta) — yuz yuklash to'xtatildi, navbat tozalanadi.`,
+    );
+    await resetStuckEnrollmentQueue(api, deviceId, jobs.length);
+    return;
+  }
 
-  for (const job of jobs) {
+  const now = Date.now();
+  const job = jobs.find(
+    (item) => (enrollCooldownUntil.get(item.registrationId) || 0) <= now,
+  );
+  if (!job) {
+    log(
+      `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout).`,
+    );
+    return;
+  }
+  const waiting = jobs.length - 1;
+  if (waiting > 0) {
+    log(
+      `${jobs.length} ta haydovchi navbatda — hozir ${job.fullName}, yana ${waiting} ta kutadi.`,
+    );
+  } else {
+    log(`1 ta yangi haydovchi: ${job.fullName}`);
+  }
+
+  {
     const employeeNo = job.employeeNo || job.driverId;
     try {
       if (!employeeNo) throw new Error("employeeNo/driverId yo'q");
@@ -254,9 +542,12 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
         throw new Error("Rasm fayli bo'sh yoki juda kichik");
       }
 
-      const photoBuffer = await prepareFaceJpeg(rawPhoto);
+      const prepared = await prepareFaceJpeg(rawPhoto);
+      const photoBuffer = prepared.buffer;
       log(
-        `  rasm: ${Math.round(rawPhoto.length / 1024)} KB → ${Math.round(photoBuffer.length / 1024)} KB (Face ID uchun)`,
+        `  rasm: ${Math.round(rawPhoto.length / 1024)} KB → ${Math.round(photoBuffer.length / 1024)} KB ` +
+          `(${prepared.width}x${prepared.height} ${prepared.chroma}` +
+          `${prepared.reencoded ? "" : ", original"})`,
       );
 
       await enrollOnDevice(deviceClient, employeeNo, job.fullName, photoBuffer);
@@ -267,12 +558,19 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       });
       log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
     } catch (error) {
-      const message = errorText(error);
+      const message = describeEnrollError(error);
       if (isTransientNetworkError(error)) {
-        log(
-          `  · ${job.fullName}: server timeout — keyinroq qayta uriniladi (FAILED yozilmaydi)`,
-        );
-        continue;
+        enrollCooldownUntil.set(job.registrationId, Date.now() + 120_000);
+        if (isFaceIdNetworkError(error)) {
+          log(
+            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa boshqa haydovchilarga o'tamiz.`,
+          );
+        } else {
+          log(
+            `  · ${job.fullName}: server (Render) javob bermadi — keyinroq qayta. (${errorText(error)})`,
+          );
+        }
+        return;
       }
       log(`  ✗ ${job.fullName}: ${message}`);
       await api
@@ -392,73 +690,6 @@ async function enrollOnDevice(deviceClient, employeeNo, fullName, photoBuffer) {
       `FDLib face upload: HTTP ${faceResponse.status} ${JSON.stringify(faceResponse.data)}`,
     );
   }
-}
-
-/**
- * Normalize any common phone image (JPEG/PNG/WebP) into a small frontal JPEG
- * Face ID terminals accept (~max 600px, under ~180 KB).
- */
-async function prepareFaceJpeg(input) {
-  try {
-    const image = await Jimp.read(input);
-    const maxSide = 640;
-    const w = image.bitmap.width;
-    const h = image.bitmap.height;
-    if (w > maxSide || h > maxSide) {
-      if (w >= h) image.resize(maxSide, Jimp.AUTO);
-      else image.resize(Jimp.AUTO, maxSide);
-    }
-
-    let quality = 85;
-    let out = await image.quality(quality).getBufferAsync(Jimp.MIME_JPEG);
-    while (out.length > 180 * 1024 && quality > 40) {
-      quality -= 10;
-      out = await image.quality(quality).getBufferAsync(Jimp.MIME_JPEG);
-    }
-    return out;
-  } catch (error) {
-    throw new Error(
-      `Rasmni Face ID formatiga o'girib bo'lmadi: ${error.message}. Boshqa aniq yuz rasmini JPEG qilib yuklang.`,
-    );
-  }
-}
-
-/**
- * Hikvision is picky about multipart layout. Build the exact byte layout
- * documented for FaceDataRecord / FDSetUp (FaceImage, not img).
- */
-function buildHikvisionFaceMultipart(employeeNo, photoBuffer) {
-  const meta = JSON.stringify({
-    faceLibType: "blackFD",
-    FDID: "1",
-    FPID: employeeNo,
-  });
-  const boundary = `----hik${Date.now().toString(16)}`;
-  const CRLF = "\r\n";
-  const head =
-    `--${boundary}${CRLF}` +
-    `Content-Disposition: form-data; name="FaceDataRecord"${CRLF}` +
-    `Content-Type: application/json${CRLF}` +
-    `${CRLF}` +
-    meta +
-    `${CRLF}--${boundary}${CRLF}` +
-    `Content-Disposition: form-data; name="FaceImage"; filename="face.jpg"${CRLF}` +
-    `Content-Type: image/jpeg${CRLF}` +
-    `${CRLF}`;
-  const tail = `${CRLF}--${boundary}--${CRLF}`;
-  const data = Buffer.concat([
-    Buffer.from(head, "utf8"),
-    photoBuffer,
-    Buffer.from(tail, "utf8"),
-  ]);
-
-  return {
-    data,
-    headers: {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
-      "Content-Length": String(data.length),
-    },
-  };
 }
 
 function isIsapiFailure(response) {
