@@ -48,7 +48,16 @@ export default function StaffDashboardPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">Haydovchilar</h1>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h1 className="text-lg font-semibold">Haydovchilar</h1>
+          {!isLoading && (
+            <span className="text-sm font-medium tabular-nums text-muted-foreground">
+              {query.trim()
+                ? `${filtered.length} / ${drivers.length} ta`
+                : `${drivers.length} ta`}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           {isSuperAdmin && <CreateOperatorDialog />}
           <Button asChild size="sm">
