@@ -78,7 +78,10 @@ function acquireLock() {
     const prev = Number(String(fs.readFileSync(LOCK_PATH, "utf8")).trim());
     if (prev && isPidAlive(prev)) {
       console.error(
-        `Relay agent allaqachon ishlayapti (PID ${prev}). Ikkinchi CMD oynasini yoping.`,
+        `Shu papkada relay agent allaqachon ishlayapti (PID ${prev}). Shu papkadagi ikkinchi CMD ni yoping.`,
+      );
+      console.error(
+        "Boshqa Face ID uchun alohida papka (masalan relay-agent2) ishlataverasiz.",
       );
       process.exit(1);
     }
@@ -165,7 +168,7 @@ async function main() {
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    8000,
+    20000,
   );
 
   const stampApi = axios.create({
@@ -186,6 +189,7 @@ async function main() {
   let lastEmptyLogAt = 0;
 
   log("Sanjar Patir relay agent ishga tushdi.");
+  log("Versiya 1.1.0 — rasm: sharp baseline 4:2:0 (eski Jimp emas)");
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
   log(`Pechat oralig'i: ${pollMs} ms (tez yo'l)`);

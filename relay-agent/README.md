@@ -57,6 +57,7 @@ Har Face ID uchun alohida `.env` (o'z `DEVICE_ID` / `AGENT_KEY` / IP).
 
 ## Xatolar
 
-- `connect ECONNREFUSED 192.168.x.x:80` — PC Face ID bilan bir Wi‑Fi da emas, yoki `DEVICE_IP` eskirgan. Qurilma veb-sahifasini brauzerda ochib IP ni tekshiring. Qurilma o'chiq yoki port 80 emas (ba'zan 8000/443).
-- `PicFeaturePoints` / `SubpicAnalysisModelingError` — Face ID rasmni qabul qildi, lekin yuz nuqtalarini chiqara olmadi. Agent endi rasmlarni **4:2:0 JPEG** qilib yuboradi (eski Jimp 4:4:4 qilib yuborardi va qurilma rad etardi). Agar yana chiqsa: yaqin, oldindan, bitta yuz, yaxshi yorug'.
+- Chrome da `http://192.168.x.x` ochilishi faqat qurilma yoniqligini bildiradi. Face yuklash boshqa API (`/ISAPI/...`). Chrome ishlasa ham `PicFeaturePoints` chiqishi mumkin.
+- `connect ECONNREFUSED` yoki `timeout of 8000ms` — PC Face ID bilan bir Wi‑Fi da emas, IP eskirgan, yoki qurilma sekin. Brauzerda sahifa ochilsa, IP odatda to'g'ri.
+- `PicFeaturePoints` / `SubpicAnalysisModelingError` — Face ID rasmni qabul qildi, lekin yuz nuqtalarini chiqara olmadi. Agent **1.1.0** rasmlarni **4:2:0 JPEG** qilib yuboradi (eski Jimp 4:4:4 qilib yuborardi). Ishga tushganda logda `Versiya 1.1.0` bo'lishi shart. `rasm: ... (Face ID uchun)` — bu eski kod, yangilang.
 - `HTTP 400 Invalid Content` — rasm formati yoki yuz modellashtirish xatosi; logdagi `statusString` / `errorMsg` ga qarang.
