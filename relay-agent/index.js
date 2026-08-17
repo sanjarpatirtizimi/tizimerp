@@ -9,7 +9,22 @@ const {
   flushOutbox,
 } = require("./acs-events");
 
-const AGENT_CODE_VERSION = "1.2.1";
+const enrollCooldownUntil = new Map();
+const AGENT_CODE_VERSION = "1.2.2";
+
+function errorUrl(error) {
+  return `${error.config?.baseURL || ""}${error.config?.url || ""}`;
+}
+
+function isFaceIdNetworkError(error) {
+  const url = errorUrl(error);
+  const msg = errorText(error);
+  return Boolean(
+    (DEVICE_IP && url.includes(String(DEVICE_IP))) ||
+      /\/ISAPI\//i.test(url) ||
+      /ECONNREFUSED/i.test(msg),
+  );
+}
 const LOCK_PATH = path.join(__dirname, "agent.lock");
 const AGENT_RAW_BASE =
   "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent";
@@ -444,13 +459,22 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     return;
   }
 
-  const job = jobs[0];
-  if (jobs.length > 1) {
+  const now = Date.now();
+  const job = jobs.find(
+    (item) => (enrollCooldownUntil.get(item.registrationId) || 0) <= now,
+  );
+  if (!job) {
     log(
-      `${jobs.length} ta haydovchi navbatda — hozir 1 tasi yuboriladi (Face ID band bo'lmasin).`,
+      `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout).`,
+    );
+    return;
+  }
+  if (waiting > 0) {
+    log(
+      `${jobs.length} ta haydovchi navbatda — hozir ${job.fullName}, yana ${waiting} ta kutadi.`,
     );
   } else {
-    log(`1 ta yangi haydovchi topildi.`);
+    log(`1 ta yangi haydovchi: ${job.fullName}`);
   }
 
   {
@@ -486,9 +510,16 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     } catch (error) {
       const message = describeEnrollError(error);
       if (isTransientNetworkError(error)) {
-        log(
-          `  · ${job.fullName}: server timeout — keyinroq qayta uriniladi (FAILED yozilmaydi)`,
-        );
+        enrollCooldownUntil.set(job.registrationId, Date.now() + 120_000);
+        if (isFaceIdNetworkError(error)) {
+          log(
+            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa boshqa haydovchilarga o'tamiz.`,
+          );
+        } else {
+          log(
+            `  · ${job.fullName}: server (Render) javob bermadi — keyinroq qayta. (${errorText(error)})`,
+          );
+        }
         return;
       }
       log(`  ✗ ${job.fullName}: ${message}`);

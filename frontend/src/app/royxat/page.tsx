@@ -103,7 +103,8 @@ function RoyxatForm() {
             Rahmat, {doneName}!
           </p>
           <p className="mt-3 text-sm text-muted-foreground">
-            Siz yozildingiz. Face ID oldida turing — pechat tushadi.
+            Siz yozildingiz. Yuzingiz Face IDga yuklanmoqda — 1–2 daqiqa kuting,
+            keyin qurilma oldida turing. Pechat shundan keyin tushadi.
           </p>
         </div>
       </main>
