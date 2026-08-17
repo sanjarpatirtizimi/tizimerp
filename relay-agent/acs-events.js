@@ -71,7 +71,17 @@ function eventKey(event) {
 }
 
 function pickEmployeeNo(row) {
+  const nested =
+    row.AccessControllerEvent ||
+    row.accessControllerEvent ||
+    row;
   const candidates = [
+    nested.employeeNoString,
+    nested.employeeNo,
+    nested.EmployeeNoString,
+    nested.EmployeeNo,
+    nested.personId,
+    nested.PersonID,
     row.employeeNoString,
     row.employeeNo,
     row.EmployeeNoString,
@@ -84,6 +94,35 @@ function pickEmployeeNo(row) {
     if (s) return s;
   }
   return null;
+}
+
+function pickSerialNo(row) {
+  const nested =
+    row.AccessControllerEvent ||
+    row.accessControllerEvent ||
+    {};
+  const raw =
+    row.serialNo ??
+    row.SerialNo ??
+    nested.serialNo ??
+    nested.SerialNo;
+  return raw != null && String(raw) !== "" ? String(raw) : undefined;
+}
+
+function pickName(row) {
+  const nested =
+    row.AccessControllerEvent ||
+    row.accessControllerEvent ||
+    {};
+  return row.name || row.Name || nested.name || nested.Name || undefined;
+}
+
+function pickEventTime(row) {
+  const nested =
+    row.AccessControllerEvent ||
+    row.accessControllerEvent ||
+    {};
+  return row.time || row.Time || nested.time || nested.Time || null;
 }
 
 function pad(n) {
@@ -231,14 +270,9 @@ async function pollNewFaceEvents(deviceClient, log) {
 
     const event = {
       employeeNo,
-      eventTime: row.time || row.Time || null,
-      serialNo:
-        row.serialNo != null
-          ? String(row.serialNo)
-          : row.SerialNo != null
-            ? String(row.SerialNo)
-            : undefined,
-      name: row.name || row.Name || undefined,
+      eventTime: pickEventTime(row),
+      serialNo: pickSerialNo(row),
+      name: pickName(row),
     };
     const key = eventKey(event);
     if (seen.has(key)) {

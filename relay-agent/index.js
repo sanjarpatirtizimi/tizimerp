@@ -54,7 +54,7 @@ function isFaceIdNetworkError(error) {
 }
 const LOCK_PATH = path.join(__dirname, "agent.lock");
 const AGENT_RAW_BASE =
-  "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent";
+  "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/main/relay-agent";
 
 function buildHikvisionFaceMultipartFallback(employeeNo, photoBuffer) {
   const meta = JSON.stringify({
