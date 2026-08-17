@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const AGENT_CODE_VERSION = "1.2.0";
+const AGENT_CODE_VERSION = "1.2.1";
 
 const FILES = [
   "index.js",
@@ -65,7 +65,7 @@ async function syncAgentFiles(apiBaseUrl, log = console.log) {
       const remoteVersion = versionFromSource(remoteIndex);
       if (!remoteVersion) continue;
       if (cmpVersion(remoteVersion, AGENT_CODE_VERSION) <= 0) {
-        return { updated: false, remoteVersion };
+        continue;
       }
 
       for (const file of FILES) {

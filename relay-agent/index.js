@@ -9,7 +9,7 @@ const {
   flushOutbox,
 } = require("./acs-events");
 
-const AGENT_CODE_VERSION = "1.2.0";
+const AGENT_CODE_VERSION = "1.2.1";
 const LOCK_PATH = path.join(__dirname, "agent.lock");
 const AGENT_RAW_BASE =
   "https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/fix-relay-face-jpeg-2ec4/relay-agent";
@@ -277,7 +277,7 @@ async function main() {
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    30000,
+    60000,
   );
   const stampDeviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
@@ -302,6 +302,7 @@ async function main() {
   let enrollmentBusy = false;
   let resolvedDeviceId = DEVICE_ID;
   let lastEmptyLogAt = 0;
+  let lastSyncAt = Date.now();
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Versiya ${AGENT_CODE_VERSION} — rasm: 4:2:0 JPEG (Jimp emas)`);
@@ -354,7 +355,9 @@ async function main() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // Pechat first — do not wait behind enrollment / Render cold starts.
-    if (STAMP_POLL_ENABLED !== "false") {
+    // Do not poll AcsEvent while a face is uploading — the terminal handles
+    // one ISAPI call at a time and both sides time out (20s pechat + enroll).
+    if (STAMP_POLL_ENABLED !== "false" && !enrollmentBusy) {
       try {
         const events = await pollNewFaceEvents(stampDeviceClient, log);
         enqueueEvents(events);
@@ -402,6 +405,20 @@ async function main() {
         });
     }
 
+    if (!enrollmentBusy && Date.now() - lastSyncAt > 90_000) {
+      lastSyncAt = Date.now();
+      try {
+        const sync = require("./sync-agent-files");
+        const again = await sync.syncAgentFiles(API_BASE_URL, log);
+        if (again.updated) {
+          sync.respawnSelf();
+          return;
+        }
+      } catch {
+        // keep running
+      }
+    }
+
     if (Date.now() - lastHeartbeatAt >= heartbeatEveryMs) {
       lastHeartbeatAt = Date.now();
       if (lastError) {
@@ -417,7 +434,7 @@ async function main() {
 
 async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
   const { data: jobs } = await api.get(`/agent/${deviceId}/pending`, {
-    timeout: 12000,
+    timeout: 20000,
   });
   if (!Array.isArray(jobs) || jobs.length === 0) {
     if (opts.shouldLogEmpty) {
@@ -427,9 +444,16 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     return;
   }
 
-  log(`${jobs.length} ta yangi haydovchi topildi.`);
+  const job = jobs[0];
+  if (jobs.length > 1) {
+    log(
+      `${jobs.length} ta haydovchi navbatda — hozir 1 tasi yuboriladi (Face ID band bo'lmasin).`,
+    );
+  } else {
+    log(`1 ta yangi haydovchi topildi.`);
+  }
 
-  for (const job of jobs) {
+  {
     const employeeNo = job.employeeNo || job.driverId;
     try {
       if (!employeeNo) throw new Error("employeeNo/driverId yo'q");
@@ -465,7 +489,7 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
         log(
           `  · ${job.fullName}: server timeout — keyinroq qayta uriniladi (FAILED yozilmaydi)`,
         );
-        continue;
+        return;
       }
       log(`  ✗ ${job.fullName}: ${message}`);
       await api

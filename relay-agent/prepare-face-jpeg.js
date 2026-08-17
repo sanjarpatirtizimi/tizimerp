@@ -230,7 +230,13 @@ function prepareWithWindowsGdi(input) {
     );
     const buffer = fs.readFileSync(outFile);
     if (buffer.length < 100) throw new Error("Windows JPEG bo'sh");
-    return result(buffer, { chroma: jpegChromaLabel(buffer), reencoded: true });
+    const sof = jpegSofInfo(buffer);
+    return result(buffer, {
+      width: sof?.width,
+      height: sof?.height,
+      chroma: jpegChromaLabel(buffer),
+      reencoded: true,
+    });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
