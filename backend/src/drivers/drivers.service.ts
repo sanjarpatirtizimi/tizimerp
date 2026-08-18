@@ -336,6 +336,58 @@ export class DriversService {
     return this.enrollOnDevices(driverId, deviceIds, photoBuffer, operatorId);
   }
 
+  /**
+   * Bulk re-queue ("qayta ulash") for every driver whose device enrollment is
+   * still waiting (PENDING) or errored (FAILED). Resetting FAILED rows back to
+   * PENDING means the relay agent re-attempts them right away instead of after
+   * the 60s FAILED backoff in `AgentService.listPending`. Ulash pairing windows
+   * (pairingExpiresAt set) and blocked/deleted drivers are skipped.
+   */
+  async reconnectPendingEnrollments(operatorId: string) {
+    const registrations = await this.prisma.driverDeviceRegistration.findMany({
+      where: {
+        syncStatus: { in: [SyncStatus.PENDING, SyncStatus.FAILED] },
+        pairingExpiresAt: null,
+        driver: { deletedAt: null, status: { not: DriverStatus.BLOCKED } },
+      },
+      select: { driverId: true, deviceId: true },
+    });
+
+    const deviceIdsByDriver = new Map<string, string[]>();
+    for (const reg of registrations) {
+      const list = deviceIdsByDriver.get(reg.driverId) ?? [];
+      list.push(reg.deviceId);
+      deviceIdsByDriver.set(reg.driverId, list);
+    }
+
+    let drivers = 0;
+    let devices = 0;
+    let skipped = 0;
+    for (const [driverId, deviceIds] of deviceIdsByDriver) {
+      try {
+        await this.requeueEnrollment(driverId, deviceIds, operatorId);
+        drivers += 1;
+        devices += deviceIds.length;
+      } catch (error) {
+        // Most common cause: driver has no stored photo to push.
+        skipped += 1;
+        this.logger.warn(
+          `reconnect-pending skipped driver ${driverId}: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'DRIVER_ENROLLMENT_RECONNECT_ALL',
+      entityType: 'Driver',
+      entityId: 'bulk',
+      metadata: { drivers, devices, skipped },
+    });
+
+    return { drivers, devices, skipped };
+  }
+
   async enrollOnDevices(
     driverId: string,
     deviceIds: string[],

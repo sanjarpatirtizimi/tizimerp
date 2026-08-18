@@ -57,6 +57,14 @@ export const driversApi = {
       .post<Driver>(`/drivers/${id}/requeue-enrollment`, { deviceIds })
       .then((r) => r.data),
 
+  /** Bulk "qayta ulash": re-queue every driver stuck PENDING/FAILED to devices. */
+  reconnectPending: () =>
+    apiClient
+      .post<{ drivers: number; devices: number; skipped: number }>(
+        "/drivers/reconnect-pending",
+      )
+      .then((r) => r.data),
+
   /** Upload/replace face photo (stored durably in the database). */
   updatePhoto: (id: string, photo: File) => {
     const form = new FormData();
