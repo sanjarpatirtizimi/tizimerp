@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Search, Phone, Car } from "lucide-react";
+import { toast } from "sonner";
+import { Plus, Search, Phone, Car, Loader2, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CreateOperatorDialog } from "@/components/users/create-operator-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { driversApi } from "@/lib/api/drivers";
+import { getApiErrorMessage } from "@/lib/api-client";
 import { driverStatusLabels } from "@/lib/format";
 import type { Driver, DriverStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,14 +27,39 @@ export default function StaffDashboardPage() {
   const isSuperAdmin = claims?.kind === "staff" && claims.role === "SUPER_ADMIN";
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [query, setQuery] = useState("");
 
+  const loadDrivers = useCallback(
+    () => driversApi.list().then(setDrivers),
+    [],
+  );
+
   useEffect(() => {
-    driversApi
-      .list()
-      .then(setDrivers)
-      .finally(() => setIsLoading(false));
-  }, []);
+    loadDrivers().finally(() => setIsLoading(false));
+  }, [loadDrivers]);
+
+  async function handleReconnect() {
+    setIsReconnecting(true);
+    try {
+      const result = await driversApi.reconnectPending();
+      if (result.drivers === 0) {
+        toast.info("Qayta ulashga kutayotgan haydovchi yo'q");
+      } else {
+        const extra = result.skipped
+          ? ` (${result.skipped} ta rasm yo'qligi sababli o'tkazib yuborildi)`
+          : "";
+        toast.success(
+          `${result.drivers} ta haydovchi qurilmaga qayta ulashga yuborildi${extra}`,
+        );
+      }
+      await loadDrivers();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Qayta ulab bo'lmadi"));
+    } finally {
+      setIsReconnecting(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -60,6 +87,19 @@ export default function StaffDashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {isSuperAdmin && <CreateOperatorDialog />}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isReconnecting}
+            onClick={handleReconnect}
+          >
+            {isReconnecting ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Qayta ulash
+          </Button>
           <Button asChild size="sm">
             <Link href="/staff/drivers/new">
               <Plus />

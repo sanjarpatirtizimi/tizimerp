@@ -63,6 +63,17 @@ export class DriversController {
     return this.driversService.requeueEnrollment(id, ids, user.sub);
   }
 
+  /**
+   * Bulk "qayta ulash" (reconnect): re-queue every driver whose face push to a
+   * device is still waiting (PENDING) or errored (FAILED), so the relay agent
+   * picks them up again immediately instead of after the 60s FAILED backoff.
+   */
+  @Post('reconnect-pending')
+  @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
+  reconnectPending(@CurrentUser() user: StaffJwtPayload) {
+    return this.driversService.reconnectPendingEnrollments(user.sub);
+  }
+
   /** Re-queue face push to devices using the driver's already-stored photo. */
   @Post(':id/requeue-enrollment')
   @Roles(UserRole.OPERATOR, UserRole.SUPER_ADMIN)
