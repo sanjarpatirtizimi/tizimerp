@@ -2,6 +2,7 @@ import { apiClient } from "../api-client";
 import type {
   DriverBalanceSummary,
   PaginatedTransactions,
+  ResetAllStampsResult,
   StampRedeemKind,
 } from "../types";
 
@@ -42,6 +43,12 @@ export const ledgerApi = {
   ) =>
     apiClient
       .post(`/drivers/${driverId}/stamp-redemptions`, { count, kind, note })
+      .then((r) => r.data),
+
+  /** SuperAdmin-only: redeems every driver's outstanding pechats at once. */
+  resetAllStamps: (note?: string) =>
+    apiClient
+      .post<ResetAllStampsResult>("/drivers/stamps/reset-all", { note })
       .then((r) => r.data),
 
   // Driver self-service

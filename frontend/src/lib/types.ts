@@ -179,6 +179,13 @@ export interface PaginatedTransactions {
   pageSize: number;
 }
 
+export interface ResetAllStampsResult {
+  driversTotal: number;
+  driversAffected: number;
+  totalStampsRedeemed: number;
+  failedDrivers: { driverId: string; message: string }[];
+}
+
 export interface AdSlide {
   id: string;
   sortOrder: number;

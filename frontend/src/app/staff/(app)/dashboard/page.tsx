@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateOperatorDialog } from "@/components/users/create-operator-dialog";
+import { ResetAllStampsDialog } from "@/components/drivers/reset-all-stamps-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { driversApi } from "@/lib/api/drivers";
 import { driverStatusLabels } from "@/lib/format";
@@ -27,11 +28,15 @@ export default function StaffDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    driversApi
+  function loadDrivers() {
+    return driversApi
       .list()
       .then(setDrivers)
       .finally(() => setIsLoading(false));
+  }
+
+  useEffect(() => {
+    void loadDrivers();
   }, []);
 
   const filtered = useMemo(() => {
@@ -59,6 +64,7 @@ export default function StaffDashboardPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {isSuperAdmin && <ResetAllStampsDialog onDone={loadDrivers} />}
           {isSuperAdmin && <CreateOperatorDialog />}
           <Button asChild size="sm">
             <Link href="/staff/drivers/new">
