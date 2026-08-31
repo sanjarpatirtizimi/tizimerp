@@ -133,7 +133,19 @@ export function RedeemStampsDialog({
               </p>
             )}
             <div className="space-y-2">
-              <Label htmlFor="redeem-count">Nechta pechat</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="redeem-count">Nechta pechat</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-1 text-xs"
+                  disabled={availableStampCount < 1}
+                  onClick={() => setCount(String(availableStampCount))}
+                >
+                  Hammasi ({availableStampCount})
+                </Button>
+              </div>
               <Input
                 id="redeem-count"
                 type="number"

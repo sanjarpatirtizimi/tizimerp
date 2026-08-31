@@ -425,6 +425,100 @@ export class LedgerService {
     });
   }
 
+  /**
+   * Redeems EVERY currently-unredeemed pechat for one driver in a single
+   * shot (no need to know/type the count). Same audit-trail guarantees as
+   * `redeemStamps`: nothing is deleted, driver profile is untouched, only
+   * `redeemedAt`/… gets set on the STAMP rows plus one new
+   * STAMP_REDEMPTION insert. Returns `null` when there is nothing to redeem.
+   */
+  async redeemAllStamps(params: {
+    driverId: string;
+    operatorId: string;
+    kind?: StampRedeemKind;
+    note?: string;
+  }) {
+    const availableCount = await this.prisma.transaction.count({
+      where: {
+        driverId: params.driverId,
+        type: TransactionType.STAMP,
+        redeemedAt: null,
+      },
+    });
+    if (availableCount === 0) {
+      return null;
+    }
+
+    return this.redeemStamps({
+      driverId: params.driverId,
+      operatorId: params.operatorId,
+      count: availableCount,
+      kind: params.kind ?? StampRedeemKind.OTHER,
+      note: params.note ?? 'Barcha pechatlar tozalandi',
+    });
+  }
+
+  /**
+   * Bulk "tozalash": loops over every (non soft-deleted) driver and redeems
+   * all of their outstanding pechats. Driver records, phone numbers, cars,
+   * and the full ledger/audit history are left exactly as they are — the
+   * append-only design (see `20260815190000_db_append_only_security`
+   * migration) makes it impossible to delete STAMP rows, so "removing"
+   * pechats means marking them redeemed + zeroing their contribution to the
+   * balance, the same way a manual per-driver "Pechat yechish" would.
+   */
+  async resetAllDriversStamps(operatorId: string, note?: string) {
+    const drivers = await this.prisma.driver.findMany({
+      where: { deletedAt: null },
+      select: { id: true },
+    });
+
+    let driversAffected = 0;
+    let totalStampsRedeemed = 0;
+    const failedDrivers: { driverId: string; message: string }[] = [];
+
+    for (const driver of drivers) {
+      try {
+        const redemption = await this.redeemAllStamps({
+          driverId: driver.id,
+          operatorId,
+          kind: StampRedeemKind.OTHER,
+          note: note?.trim() || 'Umumiy pechat tozalash',
+        });
+        if (redemption) {
+          driversAffected += 1;
+          const metadata = redemption.metadata as { count?: number } | null;
+          totalStampsRedeemed += metadata?.count ?? 0;
+        }
+      } catch (error) {
+        failedDrivers.push({
+          driverId: driver.id,
+          message: (error as Error).message,
+        });
+      }
+    }
+
+    await this.auditService.log({
+      userId: operatorId,
+      action: 'ALL_STAMPS_RESET',
+      entityType: 'Driver',
+      entityId: 'ALL',
+      metadata: {
+        driversTotal: drivers.length,
+        driversAffected,
+        totalStampsRedeemed,
+        failedDrivers,
+      },
+    });
+
+    return {
+      driversTotal: drivers.length,
+      driversAffected,
+      totalStampsRedeemed,
+      failedDrivers,
+    };
+  }
+
   private async assertDriverExists(driverId: string) {
     const driver = await this.prisma.driver.findUnique({
       where: { id: driverId },
