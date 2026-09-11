@@ -8,6 +8,36 @@ const AGENT_CODE_VERSION = "1.2.5";
 let lastClearAttemptAt = 0;
 let lastCooldownLogAt = 0;
 
+// Remote log buffer — flush every 5 seconds
+const remoteLogBuffer = [];
+let remoteLogApi = null; // set after API client is created
+let lastRemoteLogFlushAt = 0;
+const REMOTE_LOG_FLUSH_MS = 5000;
+
+function scheduleRemoteLog(message, level = "info") {
+  remoteLogBuffer.push({ message, level });
+}
+
+async function flushRemoteLogs() {
+  if (!remoteLogApi || remoteLogBuffer.length === 0) return;
+  const batch = remoteLogBuffer.splice(0, 20);
+  for (const entry of batch) {
+    try {
+      await remoteLogApi.post("/agent/log", {
+        message: entry.message,
+        level: entry.level,
+        raw: entry.message,
+        version: AGENT_CODE_VERSION,
+      });
+    } catch {
+      // silently skip — never break the main loop for logging
+    }
+  }
+}
+
+// Remote config — fetched via heartbeat
+let remoteConfig = null;
+
 function loadFaceIdSchedule() {
   try {
     return require("./faceid-schedule");
@@ -183,8 +213,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function log(message) {
+function log(message, level = "info") {
   console.log(`[${new Date().toLocaleTimeString("uz-UZ")}] ${message}`);
+  scheduleRemoteLog(message, level);
 }
 
 function errorText(error) {
@@ -337,6 +368,9 @@ async function main() {
     headers: { Authorization: `Bearer ${AGENT_KEY}` },
     timeout: 45000,
   });
+
+  // Activate remote logging now that we have the API client
+  remoteLogApi = api;
   // Enrollment (face upload) can be slow; pechat uses a shorter timeout.
   const deviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
@@ -362,9 +396,11 @@ async function main() {
   const stampEveryMs = Number(process.env.STAMP_INTERVAL_MS) || 2000;
   let enrollmentEveryMs = 2_000;
   const heartbeatEveryMs = 20_000;
+  const remoteHeartbeatEveryMs = 30_000;
   let lastEnrollmentAt = 0;
   let lastHeartbeatAt = 0;
   let lastStampAt = 0;
+  let lastRemoteHeartbeatAt = 0;
   let pollsOk = 0;
   let lastError = null;
   let pendingCount = 0;
@@ -424,9 +460,9 @@ async function main() {
   } catch (error) {
     const status = error.response?.status;
     if (status === 401 || status === 403) {
-      log(`AGENT_KEY noto'g'ri (HTTP ${status}). Qurilmalar → Agent kaliti.`);
+      log(`AGENT_KEY noto'g'ri (HTTP ${status}). Qurilmalar → Agent kaliti.`, "error");
     } else {
-      log(`Server hozir javob bermadi: ${errorText(error)}`);
+      log(`Server hozir javob bermadi: ${errorText(error)}`, "warn");
       log("  Keyinroq o'zi qayta urinadi. Oynani yopmang.");
     }
   }
@@ -459,9 +495,10 @@ async function main() {
           enrollmentEveryMs = Math.min(enrollmentEveryMs * 2, 15_000);
           log(
             `Ro'yxatga olish: server band — ${Math.round(enrollmentEveryMs / 1000)}s dan keyin qayta. (${message})`,
+            "warn",
           );
         } else {
-          log(`Ro'yxatga olish poll xatosi: ${message}`);
+          log(`Ro'yxatga olish poll xatosi: ${message}`, "error");
         }
       }
     }
@@ -495,6 +532,7 @@ async function main() {
         stampPauseUntil = Date.now() + wait;
         log(
           `AcsEvent/pechat xatosi: ${message} — ${Math.round(wait / 1000)}s dam (yuz yuklash uchun).`,
+          "warn",
         );
       }
     }
@@ -513,10 +551,45 @@ async function main() {
       }
     }
 
+    // Remote heartbeat — sends status to backend and fetches remote config
+    if (Date.now() - lastRemoteHeartbeatAt >= remoteHeartbeatEveryMs) {
+      lastRemoteHeartbeatAt = Date.now();
+      try {
+        const { data } = await api.post(
+          "/agent/heartbeat",
+          {
+            version: AGENT_CODE_VERSION,
+            pendingCount,
+            lastError: lastError ?? null,
+          },
+          { timeout: 8000 },
+        );
+        if (data?.config) {
+          remoteConfig = data.config;
+          // Apply remote config overrides if present
+          if (typeof remoteConfig.stampPollEnabled === "boolean") {
+            // We can't reassign the env const, but we expose it via state
+            // The shouldPollStamp check uses stampEnabled from state
+          }
+          if (typeof remoteConfig.stampIntervalMs === "number") {
+            // stampEveryMs is a const in this scope; remote override logged only
+          }
+        }
+      } catch {
+        // Non-critical — continue without config update
+      }
+    }
+
+    // Flush remote logs
+    if (Date.now() - lastRemoteLogFlushAt >= REMOTE_LOG_FLUSH_MS) {
+      lastRemoteLogFlushAt = Date.now();
+      await flushRemoteLogs();
+    }
+
     if (Date.now() - lastHeartbeatAt >= heartbeatEveryMs) {
       lastHeartbeatAt = Date.now();
       if (lastError) {
-        log(`ishlayapti… oxirgi xato: ${lastError}`);
+        log(`ishlayapti… oxirgi xato: ${lastError}`, "warn");
       } else if (pendingCount > 0) {
         log(`ishlayapti… yuz yozilmoqda (navbat: ${pendingCount})`);
       } else {

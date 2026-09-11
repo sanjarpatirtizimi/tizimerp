@@ -5,6 +5,8 @@ import { AgentKeyGuard } from './agent-key.guard';
 import { CurrentDevice } from './current-device.decorator';
 import { AckEnrollmentDto } from './dto/ack-enrollment.dto';
 import { AgentRecognitionBatchDto } from './dto/agent-recognition.dto';
+import { AgentLogDto, AgentHeartbeatDto } from './dto/agent-log.dto';
+import { RelayAgentManagerService } from './relay-agent-manager.service';
 import { RecognitionService } from '../webhooks/recognition.service';
 
 /**
@@ -21,6 +23,7 @@ export class AgentController {
   constructor(
     private readonly agentService: AgentService,
     private readonly recognitionService: RecognitionService,
+    private readonly relayAgentManagerService: RelayAgentManagerService,
   ) {}
 
   /** Key-only identity — no DEVICE_ID in the URL (avoids 404 on slug mismatch). */
@@ -43,6 +46,19 @@ export class AgentController {
   @Post(':deviceId/pending/clear')
   clearPending() {
     return this.agentService.resetEnrollmentBacklog();
+  }
+
+  /** Relay agent posts a log message for remote viewing. */
+  @Post('log')
+  async postLog(@CurrentDevice() device: Device, @Body() dto: AgentLogDto) {
+    await this.relayAgentManagerService.saveLog(device.id, dto);
+    return { ok: true };
+  }
+
+  /** Relay agent heartbeat — updates last-seen timestamp and returns remote config. */
+  @Post('heartbeat')
+  async heartbeat(@CurrentDevice() device: Device, @Body() dto: AgentHeartbeatDto) {
+    return this.relayAgentManagerService.heartbeat(device.id, dto);
   }
 
   @Post(':deviceId/pending/:registrationId/ack')
