@@ -1,0 +1,44 @@
+{
+  "name": "sanjar-patir-agent-gui",
+  "version": "1.0.0",
+  "description": "Sanjar Patir Relay Agent boshqaruv paneli",
+  "author": "Sanjar Patir",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --publish never",
+    "build:portable": "electron-builder --win portable --publish never"
+  },
+  "build": {
+    "appId": "uz.sanjarpatir.agent",
+    "productName": "Sanjar Patir Agent",
+    "copyright": "Sanjar Patir",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "SanjarPatirAgent.exe"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "assets/**"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^34.5.8",
+    "electron-builder": "^25.1.8"
+  }
+}
