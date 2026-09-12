@@ -134,6 +134,44 @@ export function simplifyLog(raw: string): SimplifiedLog {
   }
 
   // ============================================================
+  // ACS EVENT — YUZ SKANLASH (PECHAT)
+  // ============================================================
+  if (/AcsEvent:.*ta YANGI yuz/i.test(text)) {
+    const n = text.match(/(\d+)\s*ta YANGI yuz/i);
+    const t = text.match(/\((\d+)\s*jami/i);
+    const count = n ? n[1] : '?';
+    const total = t ? ` (${t[1]} ta oynada)` : '';
+    return { message: `\u{1F6B6} ${count} ta odam yuzini ko\u02BBrsatdi${total}`, level: 'info' };
+  }
+
+  if (/\u2713\s*pechat:.*Person ID/i.test(text)) {
+    const m = text.match(/Person ID\s*(\S+)\s*\(([^)]*)\)/i);
+    const name = m ? m[2].trim() : '';
+    const pid = m ? m[1] : '';
+    return { message: `\u{1F3AB} Pechat berildi${name ? ': ' + name : ''} (ID: ${pid})`, level: 'info' };
+  }
+
+  if (/takroriy.*e.tiborsiz|IGNORED_COOLDOWN/i.test(text)) {
+    return { message: '\u{1F504} Takroriy pechat — e\'tiborsiz (bir xil signal)', level: 'info' };
+  }
+
+  if (/kutish.*Person ID.*pechat yaqinda/i.test(text)) {
+    const wait = text.match(/~([^\s,]+(?:\s+(?:soat|daqiqa|s))?)/);
+    return {
+      message: `\u23F3 Bu odam yaqinda kelgan — ${wait ? wait[1] : '?'} kutish kerak`,
+      level: 'info',
+    };
+  }
+
+  if (/YANGI serial yo.q.*pechat yuborilmaydi/i.test(text) || /qurilma yuzni ko.rsatishi mumkin/i.test(text)) {
+    return { message: '\u{1F441}\uFE0F Yuz ko\u02BBrindi, lekin yangi signal yo\u02BBq — Face ID sozlash kerak', level: 'warn' };
+  }
+
+  if (/Pechat navbatini serverga yuborib bo.lmadi/i.test(text)) {
+    return { message: '\u{1F310} Pechat serverga yuborilmadi — qayta urinadi', level: 'warn' };
+  }
+
+  // ============================================================
   // XATOLAR — FACE ID QURILMASI
   // ============================================================
   if (/Face ID javob bermadi/i.test(text) || /ECONNREFUSED/i.test(text)) {

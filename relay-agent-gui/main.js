@@ -239,6 +239,45 @@ function simplifyLog(raw) {
     return { msg: `\u26A0\uFE0F Navbat to\'lib ketdi${m ? ` (${m[1]} ta)` : ''}`, level: 'warn' };
   }
 
+  // ─── ACS Event (face scan) log messages ────────────────────────────
+  if (/AcsEvent:.*ta YANGI yuz/i.test(text)) {
+    const m = text.match(/(\d+)\s*ta YANGI yuz/i);
+    const total = text.match(/\((\d+)\s*jami/i);
+    const n = m ? m[1] : '?';
+    const t = total ? total[1] : '';
+    return {
+      msg: '\u{1F6B6} ' + n + " ta odam yuzini ko\u02BBrsatdi" + (t ? ' (' + t + ' ta oynada)' : ''),
+      level: 'info',
+    };
+  }
+
+  if (/\u2713\s*pechat:.*Person ID/i.test(text)) {
+    const m = text.match(/Person ID\s*(\S+)\s*\(([^)]*)\)/i);
+    const name = m ? m[2].trim() : '';
+    const pid = m ? m[1] : '';
+    return {
+      msg: '\u{1F3AB} Pechat berildi' + (name ? ': ' + name : '') + ' (ID: ' + pid + ')',
+      level: 'info',
+    };
+  }
+
+  if (/takroriy.*e.tiborsiz|duplicate.*serial/i.test(text))
+    return { msg: '\u{1F504} Takroriy pechat — e\'tiborsiz (bir xil signal)', level: 'info' };
+
+  if (/kutish.*Person ID.*pechat yaqinda/i.test(text)) {
+    const wait = text.match(/~([^\s,]+(?:\s+(?:soat|daqiqa|s))?)/);
+    return {
+      msg: '\u23F3 Bu odam yaqinda kelgan — ' + (wait ? wait[1] : '?') + ' kutish kerak',
+      level: 'info',
+    };
+  }
+
+  if (/YANGI serial yo.q.*pechat yuborilmaydi/i.test(text) || /qurilma yuzni ko.rsatishi mumkin/i.test(text))
+    return { msg: '\u{1F441}\uFE0F Yuz ko\u02BBrindi, lekin yangi signal yo\u02BBq — Face ID sozlash kerak', level: 'warn' };
+
+  if (/Pechat navbatini serverga yuborib bo.lmadi/i.test(text))
+    return { msg: '\u{1F310} Pechat serverga yuborilmadi — qayta urinadi', level: 'warn' };
+
   if (/Face ID javob bermadi|ECONNREFUSED/i.test(text))
     return { msg: '\u{1F534} Face ID javob bermayapti — ulanishni tekshiring', level: 'error' };
 
