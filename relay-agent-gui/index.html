@@ -536,13 +536,13 @@
 
     <!-- Buttons -->
     <div class="controls">
-      <button class="btn btn-start" id="btn-start" onclick="window.api.start()">
+      <button class="btn btn-start" id="btn-start" onclick="window.api?.start()">
         ▶️ ISHGA TUSHIRISH
       </button>
-      <button class="btn btn-stop" id="btn-stop" disabled onclick="window.api.stop()">
+      <button class="btn btn-stop" id="btn-stop" disabled onclick="window.api?.stop()">
         ⏹️ TO'XTATISH
       </button>
-      <button class="btn btn-restart" id="btn-restart" onclick="window.api.restart()">
+      <button class="btn btn-restart" id="btn-restart" onclick="window.api?.restart()">
         🔄 QAYTA
       </button>
     </div>
@@ -646,9 +646,17 @@
           <label for="env-STAMP_POLL_ENABLED-cb">Pechat o'qish yoqilgan (tavsiya: ✅)</label>
         </div>
         <div class="field-hint">Face ID dan kelish voqealarini LAN orqali o'qish</div>
-        <div class="field">
-          <label>Tekshirish oralig'i (ms) — standart: 1000</label>
-          <input id="env-POLL_INTERVAL_MS" placeholder="1000" style="width:120px" />
+        <div class="field-row">
+          <div class="field">
+            <label>Tekshirish oralig'i (ms)</label>
+            <input id="env-POLL_INTERVAL_MS" placeholder="1000" />
+            <div class="field-hint">ACS hodisalarni qanchalik tez tekshirish (standart: 1000)</div>
+          </div>
+          <div class="field">
+            <label>Qayta pechat oralig'i (ms)</label>
+            <input id="env-STAMP_INTERVAL_MS" placeholder="2000" />
+            <div class="field-hint">Bir odamga qayta pechat oralig'i (standart: 2000)</div>
+          </div>
         </div>
       </div>
     </div>
@@ -657,6 +665,20 @@
     <div class="save-bar">
       <div id="save-msg" class="save-msg">✅ Saqlandi — agent qayta ishga tushirildi</div>
       <button class="btn-save" onclick="saveSettings()">💾 Sozlamalarni saqlash</button>
+    </div>
+
+    <!-- Not-Electron warning (only shown in browser) -->
+    <div id="browser-warning" class="settings-section" style="display:none;border-color:#fbbf24;background:#fffbeb">
+      <div class="settings-body" style="flex-direction:row;align-items:center;gap:12px">
+        <span style="font-size:24px">⚠️</span>
+        <div>
+          <div style="font-weight:700;color:#92400e;font-size:13px">Bu fayl brauzerda ochilgan — funksiyalar ishlamaydi</div>
+          <div style="font-size:12px;color:#b45309;margin-top:3px">
+            Dasturni to'liq ishlatish uchun <strong>SanjarPatirAgent.exe</strong> ni ishga tushiring yoki
+            relay-agent-gui papkasida <code style="background:#fef3c7;padding:1px 5px;border-radius:3px">npm start</code> buyrug'ini bajaring.
+          </div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -786,9 +808,14 @@ function applyAgentDir(dir) {
 }
 
 // ─── Env form ────────────────────────────────────────────────────────────────
+const ENV_FIELDS = [
+  'API_BASE_URL','DEVICE_ID','AGENT_KEY',
+  'DEVICE_IP','DEVICE_PORT','DEVICE_USERNAME','DEVICE_PASSWORD',
+  'POLL_INTERVAL_MS','STAMP_INTERVAL_MS',
+];
+
 function applyEnv(data) {
-  const fields = ['API_BASE_URL','DEVICE_ID','AGENT_KEY','DEVICE_IP','DEVICE_PORT','DEVICE_USERNAME','DEVICE_PASSWORD','POLL_INTERVAL_MS'];
-  for (const key of fields) {
+  for (const key of ENV_FIELDS) {
     const el = document.getElementById('env-' + key);
     if (el && data[key] !== undefined) el.value = data[key];
   }
@@ -797,41 +824,57 @@ function applyEnv(data) {
 }
 
 function saveSettings() {
+  if (!window.api) { alert('Electron orqali ishga tushiring — brauzerda saqlash imkonsiz.'); return; }
   const data = {};
-  const fields = ['API_BASE_URL','DEVICE_ID','AGENT_KEY','DEVICE_IP','DEVICE_PORT','DEVICE_USERNAME','DEVICE_PASSWORD','POLL_INTERVAL_MS'];
-  for (const key of fields) {
+  for (const key of ENV_FIELDS) {
     const el = document.getElementById('env-' + key);
-    if (el) data[key] = el.value;
+    if (el && el.value.trim()) data[key] = el.value.trim();
   }
   const cb = document.getElementById('env-STAMP_POLL_ENABLED-cb');
   data['STAMP_POLL_ENABLED'] = cb && cb.checked ? 'true' : 'false';
 
   window.api.saveEnv(data);
-  // Saqlangandan keyin agentni qayta ishga tushirish
   setTimeout(() => window.api.restart(), 300);
 }
 
 function pickDir() {
+  if (!window.api) { alert('Electron orqali ishga tushiring.'); return; }
   window.api.pickAgentDir().then(dir => {
     if (dir) applyAgentDir(dir);
   });
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-window.api.onStatus(applyStatus);
-window.api.onLog(addLog);
-window.api.onAgentDir(applyAgentDir);
-window.api.onEnvData(applyEnv);
-window.api.onEnvSaved(() => {
-  const msg = document.getElementById('save-msg');
-  msg.classList.add('show');
-  setTimeout(() => msg.classList.remove('show'), 4000);
-});
+if (window.api) {
+  // Electron muhiti — to'liq funksionallik
+  window.api.onStatus(applyStatus);
+  window.api.onLog(addLog);
+  window.api.onAgentDir(applyAgentDir);
+  window.api.onEnvData(applyEnv);
+  window.api.onEnvSaved(() => {
+    const msg = document.getElementById('save-msg');
+    msg.classList.add('show');
+    setTimeout(() => msg.classList.remove('show'), 4000);
+  });
 
-// Dastlabki holat
-window.api.getStatus().then(applyStatus);
-window.api.getAgentDir().then(applyAgentDir);
-window.api.getEnv().then(applyEnv);
+  window.api.getStatus().then(applyStatus);
+  window.api.getAgentDir().then(applyAgentDir);
+  window.api.getEnv().then(applyEnv);
+} else {
+  // Brauzerda ochilgan — preview rejimi
+  document.getElementById('browser-warning').style.display = 'flex';
+  applyStatus('stopped');
+
+  // Tugmalarni disable qilish
+  ['btn-start','btn-stop','btn-restart'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = 'Faqat Electron dasturida ishlaydi'; }
+  });
+
+  // Header badge ni o'zgartirish
+  const hb = document.getElementById('header-status-badge');
+  if (hb) { hb.textContent = 'BRAUZER'; hb.className = 'status-badge badge-amber'; }
+}
 </script>
 </body>
 </html>
