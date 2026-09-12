@@ -14,6 +14,38 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
+const https = require('https');
+
+// ─── Auto-updater ─────────────────────────────────────────────────────────────
+const UPDATE_BASE = 'https://raw.githubusercontent.com/sanjarpatirtizimi/tizimerp/cursor/relay-agent-dashboard-2044/relay-agent-gui';
+const UPDATE_FILES = ['main.js', 'preload.js', 'index.html'];
+
+function downloadText(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'SanjarPatirAgent/1.0' } }, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`HTTP ${res.statusCode} — ${url}`));
+        return;
+      }
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve(body));
+    }).on('error', reject);
+  });
+}
+
+async function performUpdate(onProgress) {
+  const appDir = __dirname;
+  onProgress('Tekshirilmoqda...');
+  for (let i = 0; i < UPDATE_FILES.length; i++) {
+    const file = UPDATE_FILES[i];
+    onProgress(`Yuklanmoqda: ${file} (${i + 1}/${UPDATE_FILES.length})`);
+    const content = await downloadText(`${UPDATE_BASE}/${file}`);
+    if (!content || content.length < 100) throw new Error(`${file} bo'sh keldi`);
+    fs.writeFileSync(path.join(appDir, file), content, 'utf8');
+  }
+  onProgress('Qayta ishga tushirilmoqda...');
+}
 
 // ─── Agent papkasini topish ────────────────────────────────────────────────
 // GUI relay-agent papkasining ichida (relay-agent/gui/) yoki
@@ -597,6 +629,22 @@ ipcMain.handle('open-log-folder', () => {
 
 ipcMain.handle('open-env-file', () => {
   if (agentDir) shell.openPath(path.join(agentDir, '.env'));
+});
+
+ipcMain.handle('perform-update', async () => {
+  try {
+    await performUpdate((msg) => {
+      sendToRenderer('update-progress', msg);
+    });
+    // Fayllari yangilandi — qayta ishga tushirish
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 800);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

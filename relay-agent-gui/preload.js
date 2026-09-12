@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   pickNodePath: () => ipcRenderer.invoke('pick-node-path'),
   openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
   openEnvFile: () => ipcRenderer.invoke('open-env-file'),
+  performUpdate: () => ipcRenderer.invoke('perform-update'),
 
   // Events from main
   onStatus: (fn) => ipcRenderer.on('status', (_e, s) => fn(s)),
@@ -25,4 +26,5 @@ contextBridge.exposeInMainWorld('api', {
   onAgentDir: (fn) => ipcRenderer.on('agent-dir', (_e, dir) => fn(dir)),
   onEnvData: (fn) => ipcRenderer.on('env-data', (_e, data) => fn(data)),
   onEnvSaved: (fn) => ipcRenderer.on('env-saved', (_e, ok) => fn(ok)),
+  onUpdateProgress: (fn) => ipcRenderer.on('update-progress', (_e, msg) => fn(msg)),
 });
