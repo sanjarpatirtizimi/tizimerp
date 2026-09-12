@@ -12,6 +12,7 @@ import {
   MessageSquareText,
   Wallet,
   QrCode,
+  Radio,
 } from "lucide-react";
 
 export type StaffNavItem = {
@@ -29,6 +30,7 @@ export const staffBottomNav: StaffNavItem[] = [
 
 export const staffSideNavAll: StaffNavItem[] = [
   { href: "/staff/devices", label: "Qurilmalar", icon: Server },
+  { href: "/staff/agents", label: "Relay agentlar", icon: Radio },
   { href: "/staff/qr", label: "QR kod", icon: QrCode },
   { href: "/staff/flagged", label: "Qizil belgilar", icon: Flag },
   { href: "/staff/feedback", label: "Murojaatlar", icon: MessageSquareText },
@@ -50,6 +52,7 @@ export const superAdminHubTiles: StaffNavItem[] = [
   { href: "/staff/dashboard", label: "Haydovchilar", icon: LayoutDashboard },
   { href: "/staff/operator-cash", label: "Operator puli", icon: Wallet },
   { href: "/staff/devices", label: "Qurilmalar", icon: Server },
+  { href: "/staff/agents", label: "Relay agentlar", icon: Radio },
   { href: "/staff/products", label: "Mahsulotlar", icon: Package },
   { href: "/staff/ads", label: "Reklamalar", icon: Megaphone },
   { href: "/staff/feedback", label: "Murojaatlar", icon: MessageSquareText },

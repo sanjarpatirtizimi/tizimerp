@@ -1,0 +1,3 @@
+node_modules/
+dist/
+.wine32prefix/

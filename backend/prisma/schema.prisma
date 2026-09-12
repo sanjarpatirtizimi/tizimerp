@@ -219,15 +219,39 @@ model Device {
   /// direct network path to the terminal (no port-forwarding needed).
   agentKeyHash      String?
   agentKeyCreatedAt DateTime?
+  /// Relay agent versiya raqami (index.js dagi AGENT_CODE_VERSION)
+  agentVersion      String?
+  /// Relay agent oxirgi marta server bilan bog'langan vaqt
+  agentLastSeenAt   DateTime?
+  /// Masofadan boshqarish uchun konfiguratsiya (JSON)
+  agentConfig       Json?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   registrations     DriverDeviceRegistration[]
   recognitionEvents RecognitionEvent[]
   transactions      Transaction[]
+  agentLogs         AgentLog[]
 
   @@unique([ipAddress, port])
   @@map("devices")
+}
+
+/// Relay agent loglarini masofadan ko'rish uchun
+model AgentLog {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// info | warn | error
+  level     String   @default("info")
+  /// Soddalashtirilgan (inson tushunadigan) xabar
+  message   String
+  /// Agent tomonidan yuborilgan asl log matni
+  raw       String?
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+  @@map("agent_logs")
 }
 
 /// Enrollment status of a Driver's face on a specific Device.
