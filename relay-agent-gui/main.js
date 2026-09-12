@@ -34,6 +34,12 @@ function findAgentDir() {
   const saved = loadSetting('agentDir');
   if (saved && fs.existsSync(path.join(saved, 'index.js'))) return saved;
 
+  // node_modules bor papkani ustun ko'rish
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'index.js')) &&
+        fs.existsSync(path.join(dir, 'node_modules'))) return dir;
+  }
+  // node_modules yo'q bo'lsa ham index.js ni topish (keyin xabar beramiz)
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'index.js'))) return dir;
   }
@@ -130,6 +136,27 @@ function saveSetting(key, val) {
 // ─── Log soddalash ─────────────────────────────────────────────────────────
 function simplifyLog(raw) {
   const text = raw.replace(/^\[\d{1,2}:\d{2}:\d{2}\]\s*/, '').trim();
+
+  // Stack trace qatorlarini yashirish (foydasiz texnik info)
+  if (/^\s*at\s+\S+\s+\(/.test(text) || /^\s*at\s+\S+:\d+:\d+/.test(text))
+    return null; // null = bu qatorni ko'rsatma
+
+  if (/^Require stack:?$/i.test(text) || /^-\s+[A-Z]:\\.+\.js$/.test(text))
+    return null;
+
+  if (/Cannot find module\s+'([^']+)'/i.test(text)) {
+    const m = text.match(/Cannot find module\s+'([^']+)'/i);
+    const mod = m ? m[1] : 'modul';
+    return { msg: `\u274C npm paketi topilmadi: "${mod}" — relay-agent papkasida "npm install" bajaring`, level: 'error' };
+  }
+
+  if (/MODULE_NOT_FOUND/i.test(text))
+    return null; // "Cannot find module" bilan birgalikda keladi, takrorlanmasin
+
+  if (/^Error:\s*/i.test(text) && !/Cannot find/i.test(text)) {
+    const msg = text.replace(/^Error:\s*/i, '').slice(0, 120);
+    return { msg: `\u274C Xato: ${msg}`, level: 'error' };
+  }
 
   if (/relay agent ishga tushdi/i.test(text))
     return { msg: '\u{1F680} Relay agent ishga tushdi', level: 'info' };
@@ -295,6 +322,41 @@ function startAgent() {
     return;
   }
 
+  // node_modules tekshirish
+  const nmPath = path.join(agentDir, 'node_modules');
+  if (!fs.existsSync(nmPath)) {
+    sendToRenderer('log', {
+      msg: '\u274C npm paketlari o\'rnatilmagan!',
+      level: 'error',
+      time: new Date().toLocaleTimeString('uz-UZ'),
+    });
+    sendToRenderer('log', {
+      msg: `\u{1F4CB} Buyruq: CMD ni oching \u2192 "${agentDir}" papkasiga kiring \u2192 "npm install" bajaring`,
+      level: 'warn',
+      time: new Date().toLocaleTimeString('uz-UZ'),
+    });
+    return;
+  }
+
+  // .env tekshirish
+  const envPath = path.join(agentDir, '.env');
+  if (!fs.existsSync(envPath)) {
+    sendToRenderer('log', {
+      msg: '\u26A0\uFE0F .env fayli topilmadi — Sozlamalar tabiga o\'ting va to\'ldiring',
+      level: 'warn',
+      time: new Date().toLocaleTimeString('uz-UZ'),
+    });
+  } else {
+    const env = readEnv(agentDir);
+    if (!env.AGENT_KEY || !env.DEVICE_IP) {
+      sendToRenderer('log', {
+        msg: '\u26A0\uFE0F AGENT_KEY yoki DEVICE_IP sozlanmagan — Sozlamalar tabiga o\'ting',
+        level: 'warn',
+        time: new Date().toLocaleTimeString('uz-UZ'),
+      });
+    }
+  }
+
   sendToRenderer('log', {
     msg: '\u{1F680} Agent ishga tushirilmoqda...',
     level: 'info',
@@ -325,10 +387,11 @@ function startAgent() {
     for (const line of lines) {
       const raw = line.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (!raw) continue;
-      const { msg, level } = simplifyLog(raw);
+      const result = simplifyLog(raw);
+      if (!result) continue; // null = stack trace qatori, yashirildi
       sendToRenderer('log', {
-        msg,
-        level,
+        msg: result.msg,
+        level: result.level,
         raw,
         time: new Date().toLocaleTimeString('uz-UZ'),
       });
