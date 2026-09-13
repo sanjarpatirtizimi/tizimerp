@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title description">
   <title id="title">Driver Loyalty ERP tizim arxitekturasi</title>
-  <desc id="description">Frontend, NestJS modul monolit, PostgreSQL, Hikvision relay-agent, Render va GitHub deploy oqimini korsatuvchi sxema.</desc>
+  <desc id="description">Frontend, NestJS modul monolit, PostgreSQL, Hikvision relay-agent, Render va GitHub deploy oqimini ko'rsatuvchi sxema.</desc>
   <defs>
     <style>
       text { font-family: Inter, Arial, sans-serif; fill: #14213d; }
