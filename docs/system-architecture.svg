@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title description">
+  <title id="title">Driver Loyalty ERP tizim arxitekturasi</title>
+  <desc id="description">Frontend, NestJS modul monolit, PostgreSQL, Hikvision relay-agent, Render va GitHub deploy oqimini korsatuvchi sxema.</desc>
+  <defs>
+    <style>
+      text { font-family: Inter, Arial, sans-serif; fill: #14213d; }
+      .title { font-size: 38px; font-weight: 800; }
+      .subtitle { font-size: 18px; fill: #52637a; }
+      .group { fill: #f5f9fd; stroke: #9db4cc; stroke-width: 2; stroke-dasharray: 8 6; }
+      .box { fill: #fff; stroke: #2c5d87; stroke-width: 2; }
+      .backend { fill: #e8f4fb; stroke: #176b9d; stroke-width: 2; }
+      .database { fill: #edf8ef; stroke: #378f5a; stroke-width: 2; }
+      .security { fill: #fff6df; stroke: #ba7e18; stroke-width: 2; }
+      .external { fill: #f3efff; stroke: #7057a5; stroke-width: 2; }
+      .header { font-size: 21px; font-weight: 800; }
+      .label { font-size: 17px; font-weight: 700; }
+      .body { font-size: 14px; fill: #40536c; }
+      .small { font-size: 13px; fill: #40536c; }
+      .arrow { stroke: #334e68; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 7 6; }
+    </style>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#334e68"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1040" fill="#ffffff"/>
+  <text x="800" y="58" text-anchor="middle" class="title">DRIVER LOYALTY ERP  TIZIM ARXITEKTURASI</text>
+  <text x="800" y="88" text-anchor="middle" class="subtitle">Joriy production arxitekturasi: modul monolit, edge relay-agent va PostgreSQL</text>
+
+  <rect x="45" y="135" width="280" height="520" rx="16" class="group"/>
+  <text x="185" y="170" text-anchor="middle" class="header">FOYDALANUVCHILAR</text>
+  <rect x="80" y="205" width="210" height="90" rx="12" class="box"/>
+  <text x="185" y="240" text-anchor="middle" class="label">Operator / Admin</text>
+  <text x="185" y="265" text-anchor="middle" class="body">Staff web ilovasi</text>
+  <rect x="80" y="340" width="210" height="90" rx="12" class="box"/>
+  <text x="185" y="375" text-anchor="middle" class="label">Haydovchi</text>
+  <text x="185" y="400" text-anchor="middle" class="body">Mobil web ilova</text>
+  <rect x="80" y="475" width="210" height="120" rx="12" class="security"/>
+  <text x="185" y="510" text-anchor="middle" class="label">Internet chegarasi</text>
+  <text x="185" y="536" text-anchor="middle" class="body">HTTPS " CORS origin</text>
+  <text x="185" y="558" text-anchor="middle" class="body">JWT access + refresh</text>
+
+  <rect x="380" y="135" width="275" height="520" rx="16" class="group"/>
+  <text x="518" y="170" text-anchor="middle" class="header">FRONTEND</text>
+  <rect x="415" y="205" width="205" height="150" rx="12" class="box"/>
+  <text x="518" y="242" text-anchor="middle" class="label">Next.js + React</text>
+  <text x="518" y="270" text-anchor="middle" class="body">Tailwind " shadcn/ui</text>
+  <text x="518" y="295" text-anchor="middle" class="body">Operator va haydovchi UI</text>
+  <text x="518" y="320" text-anchor="middle" class="body">Mobile-first</text>
+  <rect x="415" y="410" width="205" height="130" rx="12" class="security"/>
+  <text x="518" y="446" text-anchor="middle" class="label">Sessiya boshqaruvi</text>
+  <text x="518" y="472" text-anchor="middle" class="body">Axios API client</text>
+  <text x="518" y="496" text-anchor="middle" class="body">Token refresh</text>
+
+  <rect x="710" y="135" width="530" height="520" rx="16" class="group"/>
+  <text x="975" y="170" text-anchor="middle" class="header">BACKEND  NestJS MODUL MONOLIT</text>
+  <rect x="740" y="200" width="215" height="140" rx="12" class="backend"/>
+  <text x="848" y="234" text-anchor="middle" class="label">API va ruxsatlar</text>
+  <text x="848" y="260" text-anchor="middle" class="body">REST API (/api)</text>
+  <text x="848" y="284" text-anchor="middle" class="body">Auth " JWT guards " RBAC</text>
+  <text x="848" y="308" text-anchor="middle" class="body">bcrypt " audit</text>
+  <rect x="995" y="200" width="215" height="140" rx="12" class="backend"/>
+  <text x="1103" y="234" text-anchor="middle" class="label">Biznes modullari</text>
+  <text x="1103" y="260" text-anchor="middle" class="body">Drivers " users " products</text>
+  <text x="1103" y="284" text-anchor="middle" class="body">Devices " agent</text>
+  <text x="1103" y="308" text-anchor="middle" class="body">Uploads</text>
+  <rect x="740" y="390" width="215" height="155" rx="12" class="backend"/>
+  <text x="848" y="424" text-anchor="middle" class="label">Moliyaviy yadro</text>
+  <text x="848" y="450" text-anchor="middle" class="body">Ledger " balances</text>
+  <text x="848" y="474" text-anchor="middle" class="body">Cash advance " exchange</text>
+  <text x="848" y="498" text-anchor="middle" class="body">Append-only yozuvlar</text>
+  <rect x="995" y="390" width="215" height="155" rx="12" class="backend"/>
+  <text x="1103" y="424" text-anchor="middle" class="label">Hikvision integratsiyasi</text>
+  <text x="1103" y="450" text-anchor="middle" class="body">ISAPI client " webhook</text>
+  <text x="1103" y="474" text-anchor="middle" class="body">Cooldown / anti-fraud</text>
+  <text x="1103" y="498" text-anchor="middle" class="body">Agent key tekshiruvi</text>
+
+  <rect x="1290" y="135" width="265" height="520" rx="16" class="group"/>
+  <text x="1422" y="170" text-anchor="middle" class="header">MA'LUMOTLAR</text>
+  <rect x="1320" y="205" width="205" height="145" rx="12" class="database"/>
+  <text x="1422" y="240" text-anchor="middle" class="label">PostgreSQL + Prisma</text>
+  <text x="1422" y="267" text-anchor="middle" class="body">Yagona ma'lumotlar bazasi</text>
+  <text x="1422" y="291" text-anchor="middle" class="body">RLS " FORCE RLS</text>
+  <text x="1422" y="315" text-anchor="middle" class="body">REVOKE PUBLIC</text>
+  <rect x="1320" y="410" width="205" height="125" rx="12" class="database"/>
+  <text x="1422" y="445" text-anchor="middle" class="label">Fayl saqlash</text>
+  <text x="1422" y="472" text-anchor="middle" class="body">Backend uploads/</text>
+  <text x="1422" y="496" text-anchor="middle" class="body">Haydovchi suratlari</text>
+
+  <rect x="45" y="715" width="735" height="265" rx="16" class="group"/>
+  <text x="412" y="750" text-anchor="middle" class="header">LOKAL TARMOQ VA QURILMALAR</text>
+  <rect x="85" y="790" width="245" height="135" rx="12" class="external"/>
+  <text x="208" y="826" text-anchor="middle" class="label">Relay-agent</text>
+  <text x="208" y="852" text-anchor="middle" class="body">Windows / LAN</text>
+  <text x="208" y="876" text-anchor="middle" class="body">Enrollment sync</text>
+  <text x="208" y="900" text-anchor="middle" class="body">Agent API key</text>
+  <rect x="470" y="790" width="265" height="135" rx="12" class="external"/>
+  <text x="602" y="826" text-anchor="middle" class="label">Hikvision Face ID</text>
+  <text x="602" y="852" text-anchor="middle" class="body">ISAPI enrollment</text>
+  <text x="602" y="876" text-anchor="middle" class="body">Recognition webhook</text>
+  <text x="602" y="900" text-anchor="middle" class="body">Pechat voqealari</text>
+
+  <rect x="835" y="715" width="720" height="265" rx="16" class="group"/>
+  <text x="1195" y="750" text-anchor="middle" class="header">DEPLOY VA OPERATSIYA</text>
+  <rect x="870" y="790" width="190" height="125" rx="12" class="box"/>
+  <text x="965" y="826" text-anchor="middle" class="label">GitHub</text>
+  <text x="965" y="852" text-anchor="middle" class="body">Source code</text>
+  <text x="965" y="876" text-anchor="middle" class="body">git push</text>
+  <rect x="1110" y="790" width="195" height="125" rx="12" class="box"/>
+  <text x="1208" y="826" text-anchor="middle" class="label">Render</text>
+  <text x="1208" y="852" text-anchor="middle" class="body">Auto deploy</text>
+  <text x="1208" y="876" text-anchor="middle" class="body">Frontend + backend</text>
+  <rect x="1355" y="790" width="160" height="125" rx="12" class="security"/>
+  <text x="1435" y="826" text-anchor="middle" class="label">Health check</text>
+  <text x="1435" y="852" text-anchor="middle" class="body">/api</text>
+  <text x="1435" y="876" text-anchor="middle" class="body">Render logs</text>
+
+  <path d="M290 250 H415" class="arrow"/>
+  <path d="M290 385 H415" class="arrow"/>
+  <path d="M620 280 H740" class="arrow"/>
+  <path d="M955 270 H995" class="arrow"/>
+  <path d="M955 470 H995" class="arrow"/>
+  <path d="M1210 270 H1320" class="arrow"/>
+  <path d="M1210 467 H1320" class="arrow"/>
+  <path d="M740 468 C670 468 690 845 330 845" class="arrow dashed"/>
+  <path d="M470 850 H330" class="arrow"/>
+  <path d="M602 790 C720 735 1020 650 1103 545" class="arrow dashed"/>
+  <path d="M1060 852 H1110" class="arrow"/>
+  <path d="M1208 790 C1208 700 1030 680 975 655" class="arrow dashed"/>
+  <path d="M1305 852 H1355" class="arrow"/>
+</svg>
