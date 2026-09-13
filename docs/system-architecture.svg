@@ -25,7 +25,7 @@
   </defs>
 
   <rect width="1600" height="1040" fill="#ffffff"/>
-  <text x="800" y="58" text-anchor="middle" class="title">DRIVER LOYALTY ERP  TIZIM ARXITEKTURASI</text>
+  <text x="800" y="58" text-anchor="middle" class="title">DRIVER LOYALTY ERP - TIZIM ARXITEKTURASI</text>
   <text x="800" y="88" text-anchor="middle" class="subtitle">Joriy production arxitekturasi: modul monolit, edge relay-agent va PostgreSQL</text>
 
   <rect x="45" y="135" width="280" height="520" rx="16" class="group"/>
@@ -54,7 +54,7 @@
   <text x="518" y="496" text-anchor="middle" class="body">Token refresh</text>
 
   <rect x="710" y="135" width="530" height="520" rx="16" class="group"/>
-  <text x="975" y="170" text-anchor="middle" class="header">BACKEND  NestJS MODUL MONOLIT</text>
+  <text x="975" y="170" text-anchor="middle" class="header">BACKEND - NestJS MODUL MONOLIT</text>
   <rect x="740" y="200" width="215" height="140" rx="12" class="backend"/>
   <text x="848" y="234" text-anchor="middle" class="label">API va ruxsatlar</text>
   <text x="848" y="260" text-anchor="middle" class="body">REST API (/api)</text>
