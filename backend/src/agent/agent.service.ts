@@ -11,6 +11,14 @@ export interface PendingEnrollmentJob {
   employeeNo: string;
   fullName: string;
   photoUrl: string;
+  /**
+   * ISO timestamp the registration row was created. Lets the relay agent
+   * detect a job that has been PENDING far longer than any real enroll
+   * attempt should take (e.g. a permanently unreachable device) and clear
+   * it, instead of it sitting in the queue forever purely because the
+   * backlog never grows large enough to trip the size-based safety net.
+   */
+  createdAt: string;
 }
 
 @Injectable()
@@ -55,6 +63,7 @@ export class AgentService {
         employeeNo: r.driverId,
         fullName: r.driver.fullName,
         photoUrl: `/api/public/driver-photos/${r.driverId}`,
+        createdAt: r.createdAt.toISOString(),
       });
     }
     return jobs;

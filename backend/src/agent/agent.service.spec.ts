@@ -24,11 +24,13 @@ describe('AgentService', () => {
 
   it('listPending ignores deleted drivers and FAILED jobs', async () => {
     const prisma = createPrisma();
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
     prisma.driverDeviceRegistration.findMany.mockResolvedValue([
       {
         id: 'reg-1',
         driverId: 'drv-1',
         driver: { id: 'drv-1', fullName: 'Ali', photoUrl: '/p' },
+        createdAt,
       },
     ]);
     const service = new AgentService(prisma as never);
@@ -56,6 +58,7 @@ describe('AgentService', () => {
         employeeNo: 'drv-1',
         fullName: 'Ali',
         photoUrl: '/api/public/driver-photos/drv-1',
+        createdAt: createdAt.toISOString(),
       },
     ]);
   });
