@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const AGENT_CODE_VERSION = "1.2.5";
+const AGENT_CODE_VERSION = "1.3.0";
 
 const FILES = [
   "index.js",

@@ -4,20 +4,50 @@ const path = require("path");
 const axios = require("axios");
 
 const enrollCooldownUntil = new Map();
-const AGENT_CODE_VERSION = "1.2.5";
+const enrollFailureCount = new Map();
+const AGENT_CODE_VERSION = "1.3.0";
 let lastClearAttemptAt = 0;
 let lastCooldownLogAt = 0;
+
+/**
+ * How long pechat (AcsEvent) and enroll writes stay away from each other
+ * right after either one actually touched the terminal. This is NOT how
+ * long pechat is paused for — it is a brief "let the terminal breathe"
+ * window, unlike the old behavior which paused pechat for the entire time
+ * the enroll queue was non-empty (see faceid-schedule.js).
+ */
+const DEVICE_SETTLE_MS = 3_000;
+
+/**
+ * A single enroll job that keeps hitting a transient/network error (Face ID
+ * busy, Render cold start, etc.) used to stay PENDING forever — retried
+ * every ~2 minutes — which meant it (and the pechat pause around it) never
+ * went away on its own. After this many consecutive transient failures we
+ * give up on it (mark FAILED so it drops out of the queue) instead of
+ * blocking that gate indefinitely.
+ */
+const MAX_TRANSIENT_ENROLL_RETRIES = 5;
 
 function loadFaceIdSchedule() {
   try {
     return require("./faceid-schedule");
   } catch {
     return {
-      shouldPollStamp: (state) =>
-        state.stampEnabled !== false &&
-        !(state.pendingCount > 0) &&
-        !state.coolingDown &&
-        (state.now || Date.now()) >= (state.stampPauseUntil || 0),
+      shouldPollStamp: (state) => {
+        const now = state.now || Date.now();
+        const settleMs = state.deviceSettleMs || 0;
+        return (
+          state.stampEnabled !== false &&
+          !state.coolingDown &&
+          now - (state.lastEnrollTouchAt || 0) >= settleMs &&
+          now >= (state.stampPauseUntil || 0)
+        );
+      },
+      canTouchDeviceForEnroll: (state) => {
+        const now = state.now || Date.now();
+        const settleMs = state.deviceSettleMs || 0;
+        return now - (state.lastStampTouchAt || 0) >= settleMs;
+      },
       stampBackoffMs: (n) =>
         Math.min(15_000 * 2 ** (Math.max(1, Number(n) || 1) - 1), 120_000),
     };
@@ -323,7 +353,8 @@ async function main() {
   }
   acquireLock();
   prepareFaceJpeg = loadPrepareFaceJpeg();
-  const { shouldPollStamp, stampBackoffMs } = loadFaceIdSchedule();
+  const { shouldPollStamp, canTouchDeviceForEnroll, stampBackoffMs } =
+    loadFaceIdSchedule();
   const {
     DigestHttpClient,
     pollNewFaceEvents,
@@ -337,12 +368,15 @@ async function main() {
     headers: { Authorization: `Bearer ${AGENT_KEY}` },
     timeout: 45000,
   });
-  // Enrollment (face upload) can be slow; pechat uses a shorter timeout.
+  // Enrollment (face upload) can be slower than an AcsEvent search, but a
+  // hung write must not occupy — and pause pechat around — the terminal for
+  // a full minute per attempt. 20s is generous for a real write while
+  // bounding the worst case.
   const deviceClient = new DigestHttpClient(
     `http://${DEVICE_IP}:${DEVICE_PORT}`,
     DEVICE_USERNAME,
     DEVICE_PASSWORD,
-    60000,
+    20000,
   );
   // Fail-fast pechat: a hung AcsEvent must not occupy Face ID for 20s.
   const stampDeviceClient = new DigestHttpClient(
@@ -374,16 +408,23 @@ async function main() {
   let resolvedDeviceId = DEVICE_ID;
   let lastEmptyLogAt = 0;
   let lastSyncAt = Date.now();
+  // "Let the terminal breathe" timestamps — see DEVICE_SETTLE_MS. Each side
+  // only watches the OTHER side's last touch (never its own), so pechat's
+  // own 2s cadence never self-blocks. This is what actually keeps pechat
+  // and enroll writes from overlapping; it is NOT the same as "queue is
+  // non-empty", so pechat stays free even while drivers remain queued.
+  let lastEnrollTouchAt = 0;
+  let lastStampTouchAt = 0;
 
   log("Sanjar Patir relay agent ishga tushdi.");
   log(`Versiya ${AGENT_CODE_VERSION} — rasm: 4:2:0 JPEG (Jimp emas)`);
   log(`Server: ${API_BASE_URL}`);
   log(`Qurilma (.env): ${DEVICE_ID} (${DEVICE_IP}:${DEVICE_PORT})`);
-  log(`Pechat oralig'i: ${stampEveryMs} ms (navbat bo'sh bo'lsa)`);
+  log(`Pechat oralig'i: ${stampEveryMs} ms`);
   log(
     STAMP_POLL_ENABLED === "false"
       ? "Pechat poll: o'chirilgan"
-      : "Pechat poll: navbatda haydovchi bo'lsa to'xtaydi (Face ID band bo'lmasin)",
+      : "Pechat poll: navbatda haydovchi bo'lsa ham davom etadi (faqat yozish payti bir necha soniya kutadi)",
   );
   log("Haydovchi qo'shilsa logda 'yangi haydovchi' chiqadi. Oynani yopmang.");
   console.log("");
@@ -433,8 +474,10 @@ async function main() {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Enroll first. AcsEvent must not run for 8–20s before a waiting face
-    // upload — the terminal handles one ISAPI call and both sides time out.
+    // Enroll and pechat (AcsEvent) share one terminal that only handles one
+    // ISAPI call at a time, so they briefly avoid touching the device in the
+    // very same instant (DEVICE_SETTLE_MS) — but a non-empty enroll queue
+    // no longer pauses pechat for everyone else at this gate indefinitely.
     if (Date.now() - lastEnrollmentAt >= enrollmentEveryMs) {
       lastEnrollmentAt = Date.now();
       try {
@@ -448,10 +491,18 @@ async function main() {
             onLoggedEmpty: () => {
               lastEmptyLogAt = Date.now();
             },
+            canTouchDevice: canTouchDeviceForEnroll({
+              lastStampTouchAt,
+              deviceSettleMs: DEVICE_SETTLE_MS,
+              now: Date.now(),
+            }),
           },
         );
         pendingCount = result?.pendingCount ?? 0;
         coolingDown = Boolean(result?.coolingDown);
+        if (result?.deviceTouched) {
+          lastEnrollTouchAt = Date.now();
+        }
         enrollmentEveryMs = 2_000;
       } catch (error) {
         const message = errorText(error);
@@ -469,7 +520,8 @@ async function main() {
     if (
       shouldPollStamp({
         stampEnabled: STAMP_POLL_ENABLED !== "false",
-        pendingCount,
+        lastEnrollTouchAt,
+        deviceSettleMs: DEVICE_SETTLE_MS,
         coolingDown,
         stampPauseUntil,
         lastStampAt,
@@ -485,6 +537,7 @@ async function main() {
         pollsOk += 1;
         lastError = null;
         stampTimeouts = 0;
+        lastStampTouchAt = Date.now();
       } catch (error) {
         const message = error.response
           ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data)}`
@@ -493,6 +546,7 @@ async function main() {
         stampTimeouts += 1;
         const wait = stampBackoffMs(stampTimeouts);
         stampPauseUntil = Date.now() + wait;
+        lastStampTouchAt = Date.now();
         log(
           `AcsEvent/pechat xatosi: ${message} — ${Math.round(wait / 1000)}s dam (yuz yuklash uchun).`,
         );
@@ -532,9 +586,15 @@ async function main() {
  * QR self-register flooded every Face ID with the same 20–30 jobs. A stuck
  * queue plus overlapping AcsEvent calls makes the terminal time out forever.
  * Clear the backlog once when it is already large; do not wipe 1–2 new jobs.
+ *
+ * `opts.stuckByAge` bypasses the size gate — used when a single old job has
+ * sat in the queue far longer than any real enroll attempt should take
+ * (see STUCK_QUEUE_MAX_AGE_MS), so it does not sit there forever just
+ * because the backlog never grows past 8.
  */
-async function resetStuckEnrollmentQueue(api, deviceId, pendingCount) {
-  if (!deviceId || pendingCount < 8) return;
+async function resetStuckEnrollmentQueue(api, deviceId, pendingCount, opts = {}) {
+  if (!deviceId) return;
+  if (!opts.stuckByAge && pendingCount < 8) return;
   if (Date.now() - lastClearAttemptAt < 15_000) return;
   lastClearAttemptAt = Date.now();
   try {
@@ -542,6 +602,7 @@ async function resetStuckEnrollmentQueue(api, deviceId, pendingCount) {
       timeout: 45000,
     });
     enrollCooldownUntil.clear();
+    enrollFailureCount.clear();
     log(
       `Navbat noldan: ${data?.clearedJobs ?? 0} ta yuz yuklash o'chirildi, ` +
         `${data?.removedDrivers ?? 0} ta kutilgan haydovchi (pechatsiz) o'chirildi.`,
@@ -557,6 +618,9 @@ async function resetStuckEnrollmentQueue(api, deviceId, pendingCount) {
   }
 }
 
+/** Longer than any real enroll attempt should ever sit PENDING for. */
+const STUCK_QUEUE_MAX_AGE_MS = 20 * 60 * 1000;
+
 async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
   const { data: jobs } = await api.get(`/agent/${deviceId}/pending`, {
     timeout: 20000,
@@ -566,15 +630,24 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
       log("Ro'yxat: navbat bo'sh (haydovchi qo'shilsa shu yerda chiqadi)");
       opts.onLoggedEmpty?.();
     }
-    return { pendingCount: 0, coolingDown: false };
+    return { pendingCount: 0, coolingDown: false, deviceTouched: false };
   }
 
-  if (jobs.length >= 8) {
+  // Oldest job first (backend already orders by createdAt asc) — a job that
+  // has been PENDING far longer than any real enroll attempt takes is stuck
+  // (e.g. a permanently unreachable Face ID), not merely "next in line".
+  const oldestAgeMs = jobs[0]?.createdAt
+    ? Date.now() - new Date(jobs[0].createdAt).getTime()
+    : 0;
+  const stuckByAge = oldestAgeMs > STUCK_QUEUE_MAX_AGE_MS;
+  if (jobs.length >= 8 || stuckByAge) {
     log(
-      `Navbat katta (${jobs.length} ta) — yuz yuklash to'xtatildi, navbat tozalanadi.`,
+      stuckByAge
+        ? `Navbatdagi eng eski ish ${Math.round(oldestAgeMs / 60000)} daqiqadan beri kutmoqda — yuz yuklash to'xtatildi, navbat tozalanadi.`
+        : `Navbat katta (${jobs.length} ta) — yuz yuklash to'xtatildi, navbat tozalanadi.`,
     );
-    await resetStuckEnrollmentQueue(api, deviceId, jobs.length);
-    return { pendingCount: jobs.length, coolingDown: false };
+    await resetStuckEnrollmentQueue(api, deviceId, jobs.length, { stuckByAge });
+    return { pendingCount: jobs.length, coolingDown: false, deviceTouched: false };
   }
 
   const now = Date.now();
@@ -585,11 +658,19 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
     if (now - lastCooldownLogAt > 30_000) {
       lastCooldownLogAt = now;
       log(
-        `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout). Pechat so'ralmaydi — Face ID dam oladi.`,
+        `${jobs.length} ta haydovchi navbatda, lekin hozir kutishda (oxirgi urinish timeout).`,
       );
     }
-    return { pendingCount: jobs.length, coolingDown: true };
+    return { pendingCount: jobs.length, coolingDown: true, deviceTouched: false };
   }
+
+  // Pechat (AcsEvent) just touched the terminal — give it a moment before
+  // sending it another ISAPI call, but do NOT hold the whole queue hostage;
+  // retry this same job again on the next 2s cycle instead of blocking here.
+  if (!opts.canTouchDevice) {
+    return { pendingCount: jobs.length, coolingDown: false, deviceTouched: false };
+  }
+
   const waiting = jobs.length - 1;
   if (waiting > 0) {
     log(
@@ -628,31 +709,71 @@ async function pollOnce(api, deviceClient, backendOrigin, deviceId, opts = {}) {
         success: true,
         hikvisionFaceId: employeeNo,
       });
+      enrollCooldownUntil.delete(job.registrationId);
+      enrollFailureCount.delete(job.registrationId);
       log(`  ✓ ${job.fullName} yozildi (Person ID: ${employeeNo})`);
-      return { pendingCount: Math.max(0, jobs.length - 1), coolingDown: false };
+      return {
+        pendingCount: Math.max(0, jobs.length - 1),
+        coolingDown: false,
+        deviceTouched: true,
+      };
     } catch (error) {
       const message = describeEnrollError(error);
       if (isTransientNetworkError(error)) {
+        const failures = (enrollFailureCount.get(job.registrationId) || 0) + 1;
+        enrollFailureCount.set(job.registrationId, failures);
+
+        if (failures >= MAX_TRANSIENT_ENROLL_RETRIES) {
+          // This job has failed too many times to keep parking the whole
+          // gate's pechat around it — give up on it so it stops occupying
+          // the queue. Staff can re-add the driver / re-upload the photo.
+          enrollCooldownUntil.delete(job.registrationId);
+          enrollFailureCount.delete(job.registrationId);
+          await api
+            .post(`/agent/${deviceId}/pending/${job.registrationId}/ack`, {
+              success: false,
+              error: `${failures} marta ketma-ket timeout/tarmoq xatosi — navbatdan olib tashlandi: ${message}`.slice(
+                0,
+                500,
+              ),
+            })
+            .catch(() => undefined);
+          log(
+            `  ✗ ${job.fullName}: ${failures} marta ketma-ket muvaffaqiyatsiz — navbatdan olib tashlandi. Qayta urinish uchun rasmni qayta yuklang.`,
+          );
+          return {
+            pendingCount: Math.max(0, jobs.length - 1),
+            coolingDown: false,
+            deviceTouched: true,
+          };
+        }
+
         enrollCooldownUntil.set(job.registrationId, Date.now() + 120_000);
         if (isFaceIdNetworkError(error)) {
           log(
-            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa dam — pechat ham to'xtatiladi.`,
+            `  · ${job.fullName}: Face ID javob bermadi (band yoki sekin). 2 daqiqa dam (${failures}/${MAX_TRANSIENT_ENROLL_RETRIES}) — boshqa haydovchilar pechati davom etadi.`,
           );
         } else {
           log(
-            `  · ${job.fullName}: server (Render) javob bermadi — keyinroq qayta. (${errorText(error)})`,
+            `  · ${job.fullName}: server (Render) javob bermadi — keyinroq qayta (${failures}/${MAX_TRANSIENT_ENROLL_RETRIES}). (${errorText(error)})`,
           );
         }
-        return { pendingCount: jobs.length, coolingDown: true };
+        return { pendingCount: jobs.length, coolingDown: true, deviceTouched: true };
       }
       log(`  ✗ ${job.fullName}: ${message}`);
+      enrollCooldownUntil.delete(job.registrationId);
+      enrollFailureCount.delete(job.registrationId);
       await api
         .post(`/agent/${deviceId}/pending/${job.registrationId}/ack`, {
           success: false,
           error: message.slice(0, 500),
         })
         .catch(() => undefined);
-      return { pendingCount: Math.max(0, jobs.length - 1), coolingDown: false };
+      return {
+        pendingCount: Math.max(0, jobs.length - 1),
+        coolingDown: false,
+        deviceTouched: true,
+      };
     }
   }
 }
@@ -775,4 +896,23 @@ function isIsapiFailure(response) {
   );
 }
 
-main();
+// Only auto-run when launched directly (`node index.js` / `npm start`) — not
+// when required by tests, so pollOnce/resetStuckEnrollmentQueue can be
+// exercised without booting the real agent (which exits on missing .env).
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  main,
+  pollOnce,
+  resetStuckEnrollmentQueue,
+  enrollOnDevice,
+  isTransientNetworkError,
+  isFaceIdNetworkError,
+  describeEnrollError,
+  enrollCooldownUntil,
+  enrollFailureCount,
+  MAX_TRANSIENT_ENROLL_RETRIES,
+  STUCK_QUEUE_MAX_AGE_MS,
+};
