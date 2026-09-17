@@ -251,6 +251,15 @@ model DriverDeviceRegistration {
   updatedAt       DateTime   @updatedAt
 
   @@unique([driverId, deviceId])
+  /// Speeds up the relay-agent's per-device pending queue lookup
+  /// (`AgentService.listPending`) and the webhook's Person ID → driver
+  /// resolution (`RecognitionService.resolveDriverByEmployeeNo`), both of
+  /// which filter by deviceId first. Without this, both scale with the
+  /// total number of registrations across ALL devices as drivers pile up.
+  @@index([deviceId, hikvisionFaceId])
+  /// Global (cross-device) Person ID lookup in
+  /// `RecognitionService.resolveDriverByEmployeeNo` (step 4/5).
+  @@index([hikvisionFaceId])
   @@map("driver_device_registrations")
 }
 
@@ -282,6 +291,10 @@ model RecognitionEvent {
   @@index([driverId, createdAt])
   @@index([deviceId, createdAt])
   @@index([isRedFlagged, createdAt])
+  /// Speeds up the anti-double-stamp cooldown check in
+  /// `RecognitionService.ingestFaceMatch` (recentPersonStamp), which filters
+  /// by employeeNoRaw + status and orders by createdAt on every single pechat.
+  @@index([employeeNoRaw, status, createdAt])
   @@map("recognition_events")
 }
 
