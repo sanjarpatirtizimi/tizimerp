@@ -18,6 +18,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getApiErrorMessage } from "@/lib/api-client";
 import { ledgerApi } from "@/lib/api/ledger";
+import { cn } from "@/lib/utils";
+
+const SUGGESTED_AMOUNTS = [10_000, 30_000, 60_000, 90_000] as const;
+
+function formatSuggestedSom(value: number): string {
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value)} so‘m`;
+}
 
 export function ManualAdjustmentDialog({
   driverId,
@@ -86,6 +93,30 @@ export function ManualAdjustmentDialog({
                 onChange={(e) => setAmount(e.target.value)}
                 required
               />
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Tavsiya</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {SUGGESTED_AMOUNTS.map((value) => {
+                    const selected = Number(amount) === value;
+                    return (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant={selected ? "default" : "outline"}
+                        size="sm"
+                        className={cn(
+                          "h-8 text-xs font-medium",
+                          selected && "shadow-none",
+                        )}
+                        aria-pressed={selected}
+                        onClick={() => setAmount(String(value))}
+                      >
+                        {formatSuggestedSom(value)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="adj-reason">Sabab</Label>
